@@ -106,7 +106,7 @@ function generateWindowsBat(propertyKey, serverUrl) {
     '$action = New-ScheduledTaskAction -Execute $nodePath -Argument (\'"\' + $AgentDir + \'\\agent.js"\') -WorkingDirectory $AgentDir',
     '$trigger1 = New-ScheduledTaskTrigger -AtStartup',
     '$trigger2 = New-ScheduledTaskTrigger -Daily -At "03:00AM"',
-    '$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)',
+    '$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Days 365) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries',
     '$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest',
     'Register-ScheduledTask -TaskName "OptimaAgent" -Action $action -Trigger $trigger1,$trigger2 -Settings $settings -Principal $principal -Description "Optima HAM/SAM monitoring agent" -Force | Out-Null',
     '',
