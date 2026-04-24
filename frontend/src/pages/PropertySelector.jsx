@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, LogOut, Search, RefreshCw, Plus, Grid3X3, List,
@@ -523,10 +523,33 @@ function UsersView() {
 // ── Add Property Modal ───────────────────────────────────────────────────────
 const EMPTY_FORM = { name: '', vdms_id: '', address: '', logo_url: '', slug: '', ec2_url: '', domain: '', plan: 'standard', description: '' }
 
+const INPUT_CLS = "w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500 transition-colors"
+
+// Defined OUTSIDE AddPropertyModal so React doesn't remount it on every keystroke
+function PropField({ label, icon: Icon, value, onChange, type = 'text', placeholder = '', required = false, hint = '' }) {
+  return (
+    <div>
+      <label className="text-[10px] text-gray-500 flex items-center gap-1 mb-1">
+        {Icon && <Icon size={10} />} {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        required={required}
+        placeholder={placeholder}
+        className={INPUT_CLS}
+      />
+      {hint && <p className="text-[9px] text-gray-400 dark:text-gray-600 mt-0.5">{hint}</p>}
+    </div>
+  )
+}
+
 function AddPropertyModal({ onClose, onSaved }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const logoInputRef = useRef(null)
 
   const set = (field, value) => {
     setForm(f => {
@@ -534,6 +557,14 @@ function AddPropertyModal({ onClose, onSaved }) {
       if (field === 'name') next.slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       return next
     })
+  }
+
+  const handleLogoFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => set('logo_url', ev.target.result)
+    reader.readAsDataURL(file)
   }
 
   const submit = async (e) => {
@@ -551,19 +582,6 @@ function AddPropertyModal({ onClose, onSaved }) {
     setLoading(false)
   }
 
-  const inputCls = "w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500 transition-colors"
-
-  const F = ({ label, icon: Icon, field, type = 'text', placeholder = '', required = false, hint = '' }) => (
-    <div>
-      <label className="text-[10px] text-gray-500 block mb-1 flex items-center gap-1">
-        {Icon && <Icon size={10} />} {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      <input type={type} value={form[field]} onChange={e => set(field, e.target.value)}
-        required={required} placeholder={placeholder} className={inputCls} />
-      {hint && <p className="text-[9px] text-gray-400 dark:text-gray-600 mt-0.5">{hint}</p>}
-    </div>
-  )
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-[#222] rounded-2xl w-full max-w-lg mx-4 shadow-2xl overflow-hidden">
@@ -578,52 +596,65 @@ function AddPropertyModal({ onClose, onSaved }) {
               <p className="text-[10px] text-gray-400 dark:text-gray-600">Register a new property in the portal</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
             <X size={16} />
           </button>
         </div>
 
         {/* Form */}
         <form onSubmit={submit} className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Logo preview + upload */}
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#222] flex items-center justify-center flex-shrink-0 overflow-hidden">
-              {form.logo_url ? (
-                <img src={form.logo_url} alt="logo" className="w-full h-full object-cover" onError={e => { e.target.style.display='none' }} />
-              ) : (
-                <Building2 size={24} className="text-gray-400" />
-              )}
+
+          {/* Logo upload */}
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-[#111] border-2 border-dashed border-gray-200 dark:border-[#2a2a2a] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {form.logo_url
+                ? <img src={form.logo_url} alt="logo" className="w-full h-full object-cover rounded-xl" />
+                : <Building2 size={22} className="text-gray-300 dark:text-gray-600" />}
             </div>
             <div className="flex-1">
-              <F label="Logo URL" icon={Image} field="logo_url" placeholder="https://example.com/logo.png" hint="Paste an image URL for the property logo" />
+              <p className="text-[10px] text-gray-500 flex items-center gap-1 mb-2"><Image size={10} /> Property Logo</p>
+              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
+              <button type="button" onClick={() => logoInputRef.current.click()}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gray-100 dark:bg-[#1a1a1a] hover:bg-gray-200 dark:hover:bg-[#222] border border-gray-200 dark:border-[#2a2a2a] text-gray-600 dark:text-gray-400 rounded-lg transition-colors">
+                <Download size={11} /> Browse & Upload
+              </button>
+              {form.logo_url && (
+                <button type="button" onClick={() => set('logo_url', '')}
+                  className="ml-2 text-[10px] text-red-400 hover:text-red-500 transition-colors">
+                  Remove
+                </button>
+              )}
+              <p className="text-[9px] text-gray-400 dark:text-gray-600 mt-1">PNG, JPG or SVG · max 2MB</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <F label="Property Name" icon={Building2} field="name" placeholder="Acme Corporation" required />
+              <PropField label="Property Name" icon={Building2} value={form.name} onChange={v => set('name', v)} placeholder="Acme Corporation" required />
             </div>
-            <F label="VDMS ID" icon={Hash} field="vdms_id" placeholder="VDMS8701" hint="Unique identifier for this property" />
+            <PropField label="VDMS ID" icon={Hash} value={form.vdms_id} onChange={v => set('vdms_id', v)} placeholder="VDMS8701" hint="Unique identifier for this property" />
             <div>
-              <label className="text-[10px] text-gray-500 block mb-1 flex items-center gap-1">
+              <label className="text-[10px] text-gray-500 flex items-center gap-1 mb-1">
                 <Hash size={10} /> Slug <span className="text-red-500">*</span>
               </label>
-              <input value={form.slug} onChange={e => set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              <input
+                value={form.slug}
+                onChange={e => set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                 required placeholder="acme-corp"
-                className={`${inputCls} font-mono`} />
+                className={`${INPUT_CLS} font-mono`}
+              />
               <p className="text-[9px] text-gray-400 dark:text-gray-600 mt-0.5">Auto-generated from name</p>
             </div>
             <div className="col-span-2">
-              <F label="Address" icon={MapPin} field="address" placeholder="123 Main St, San Francisco, CA 94105" />
+              <PropField label="Address" icon={MapPin} value={form.address} onChange={v => set('address', v)} placeholder="123 Main St, San Francisco, CA 94105" />
             </div>
             <div className="col-span-2">
-              <F label="Server URL" icon={Server} field="ec2_url" placeholder="http://10.0.1.50:5000" required hint="Internal EC2 URL for this property's backend" />
+              <PropField label="Server URL" icon={Server} value={form.ec2_url} onChange={v => set('ec2_url', v)} placeholder="http://10.0.1.50:5000" required hint="EC2 URL for this property's backend" />
             </div>
-            <F label="Domain" icon={Globe} field="domain" placeholder="acme.optima.sclera.com" />
+            <PropField label="Domain" icon={Globe} value={form.domain} onChange={v => set('domain', v)} placeholder="acme.optima.sclera.com" />
             <div>
               <label className="text-[10px] text-gray-500 block mb-1">Plan</label>
-              <select value={form.plan} onChange={e => set('plan', e.target.value)}
-                className={inputCls}>
+              <select value={form.plan} onChange={e => set('plan', e.target.value)} className={INPUT_CLS}>
                 <option value="standard">Standard</option>
                 <option value="professional">Professional</option>
                 <option value="enterprise">Enterprise</option>
@@ -633,7 +664,7 @@ function AddPropertyModal({ onClose, onSaved }) {
               <label className="text-[10px] text-gray-500 block mb-1">Description</label>
               <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2}
                 placeholder="Brief description of this property…"
-                className={`${inputCls} resize-none`} />
+                className={`${INPUT_CLS} resize-none`} />
             </div>
           </div>
 
