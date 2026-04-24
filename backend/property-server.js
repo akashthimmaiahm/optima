@@ -243,6 +243,7 @@ async function main() {
   app.use('/api/mdm',                require('./routes/mdm'));
   app.use('/api/properties',         require('./routes/properties'));
   app.use('/api/procurement',        require('./routes/procurement'));
+  app.use('/api/ai-intelligence',    require('./routes/ai_intelligence'));
   app.use('/api/agent',              require('./routes/agent'));
   app.use('/api/update',             require('./routes/update'));
 

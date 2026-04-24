@@ -227,25 +227,35 @@ router.get('/cloud-resources', authenticate, async (req, res) => {
     const config = typeof m365.config === 'string' ? JSON.parse(m365.config) : (m365.config || {});
     const syncDetails = config.sync_details || {};
 
-    // Show M365 subscriptions as cloud resources
+    // Show M365 subscriptions as cloud resources with pricing
     const skus = syncDetails.skus || [];
-    const resources = skus.map((s, i) => ({
-      id: i + 1,
-      resource_name: SKU_NAMES[s.name] || s.name.replace(/_/g, ' '),
-      provider: 'Microsoft',
-      resource_type: 'SaaS License',
-      region: 'Global',
-      status: s.consumed > 0 ? 'active' : 'inactive',
-      monthly_cost: 0,
-      software_installed: s.name,
-      integration_name: 'Microsoft 365',
-      last_scanned: m365.last_sync,
-    }));
+    const resources = skus.map((s, i) => {
+      const price = SKU_PRICES[s.name] ?? 0;
+      const consumed = s.consumed || 0;
+      const enabled = s.enabled || 0;
+      return {
+        id: i + 1,
+        resource_name: SKU_NAMES[s.name] || s.name.replace(/_/g, ' '),
+        provider: 'Microsoft',
+        resource_type: 'SaaS License',
+        region: 'Global',
+        status: consumed > 0 ? 'active' : 'inactive',
+        monthly_cost: price * consumed,
+        total_cost: price * enabled,
+        price_per_user: price,
+        consumed,
+        enabled,
+        software_installed: s.name,
+        integration_name: 'Microsoft 365',
+        last_scanned: m365.last_sync,
+      };
+    });
 
+    const totalMonthlyCost = resources.reduce((s, r) => s + r.monthly_cost, 0);
     const summary = [{
       provider: 'Microsoft',
       count: resources.length,
-      monthly_cost: 0,
+      monthly_cost: totalMonthlyCost,
     }];
 
     res.json({ data: resources, summary, total: resources.length });
