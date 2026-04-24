@@ -22,10 +22,40 @@ router.get('/stats', authenticate, (req, res) => {
 
   // ── COST OPTIMIZATION ──────────────────────────────────────────────────────
 
-  // Total software spend (monthly)
-  const softwareSpend = db.prepare(`
+  const SKU_PRICES = {
+    SPB: 22.00, O365_BUSINESS_PREMIUM: 12.50, FLOW_FREE: 0, POWER_BI_STANDARD: 0,
+    POWERAPPS_DEV: 0, AAD_PREMIUM_P2: 9.00, INTUNE_A_D: 2.00, RMSBASIC: 0,
+    'Teams_Premium_(for_Departments)': 10.00, 'Power_Pages_vTrial_for_Makers': 0,
+    ENTERPRISEPACK: 23.00, ENTERPRISEPREMIUM: 38.00,
+    'Microsoft_365_E3': 36.00, 'Microsoft_365_E5': 57.00,
+    O365_BUSINESS_ESSENTIALS: 6.00, EXCHANGESTANDARD: 4.00, EXCHANGEENTERPRISE: 8.00,
+    VISIOCLIENT: 15.00, PROJECTPREMIUM: 55.00, EMS_E5: 16.00, EMS_E3: 10.90,
+  };
+
+  // Total software spend (monthly) — local DB + integrated SaaS costs
+  let softwareSpend = db.prepare(`
     SELECT SUM(total_licenses * cost_per_license) as total FROM software_assets WHERE cost_per_license > 0
   `).get().total || 0;
+
+  // Add M365 license costs from integrated data
+  let integrationSoftwareCost = 0;
+  try {
+    const integrations = db.prepare("SELECT * FROM cloud_integrations WHERE status='connected'").all();
+    for (const integ of integrations) {
+      let config = {};
+      try { config = typeof integ.config === 'string' ? JSON.parse(integ.config) : (integ.config || {}); } catch {}
+      const sd = config.sync_details || {};
+      const providerName = integ.name || integ.provider || '';
+      if (providerName.includes('Microsoft') || providerName.includes('M365') || providerName.includes('365')) {
+        const skus = sd.skus || [];
+        for (const sku of skus) {
+          const price = SKU_PRICES[sku.name] || 0;
+          integrationSoftwareCost += price * (sku.consumed || 0);
+        }
+      }
+    }
+  } catch (e) {}
+  softwareSpend += integrationSoftwareCost;
 
   // Total hardware value
   const hardwareValue = db.prepare(`
@@ -149,8 +179,8 @@ router.get('/stats', authenticate, (req, res) => {
     } catch (e2) {}
   }
 
-  // Top 5 costliest software
-  const topSoftwareCost = db.prepare(`
+  // Top 5 costliest software (local + integrated)
+  const topSoftwareCostLocal = db.prepare(`
     SELECT name, vendor, total_licenses, cost_per_license,
       total_licenses * cost_per_license as monthly_cost,
       ROUND(used_licenses * 100.0 / total_licenses, 1) as utilization_pct
@@ -158,12 +188,57 @@ router.get('/stats', authenticate, (req, res) => {
     ORDER BY monthly_cost DESC LIMIT 5
   `).all();
 
-  // Monthly spend trend by category
-  const spendByCategory = db.prepare(`
+  // Add integrated SaaS (M365 SKUs) to top software cost
+  const SKU_NAMES = {
+    SPB: 'Microsoft 365 Business Premium', O365_BUSINESS_PREMIUM: 'Microsoft 365 Business Standard',
+    FLOW_FREE: 'Power Automate Free', POWER_BI_STANDARD: 'Power BI Free',
+    'Teams_Premium_(for_Departments)': 'Teams Premium', ENTERPRISEPACK: 'Office 365 E3',
+    ENTERPRISEPREMIUM: 'Office 365 E5', 'Microsoft_365_E3': 'Microsoft 365 E3',
+  };
+  const integrationTopCost = [];
+  try {
+    const integrations2 = db.prepare("SELECT * FROM cloud_integrations WHERE status='connected'").all();
+    for (const integ of integrations2) {
+      let config2 = {};
+      try { config2 = typeof integ.config === 'string' ? JSON.parse(integ.config) : (integ.config || {}); } catch {}
+      const sd2 = config2.sync_details || {};
+      const pn = integ.name || integ.provider || '';
+      if (pn.includes('Microsoft') || pn.includes('M365') || pn.includes('365')) {
+        const skus = sd2.skus || [];
+        for (const sku of skus) {
+          const price = SKU_PRICES[sku.name] || 0;
+          if (price > 0 && (sku.consumed || 0) > 0) {
+            integrationTopCost.push({
+              name: SKU_NAMES[sku.name] || sku.name.replace(/_/g, ' '),
+              vendor: 'Microsoft',
+              total_licenses: sku.enabled || 0,
+              cost_per_license: price,
+              monthly_cost: price * (sku.consumed || 0),
+              utilization_pct: sku.enabled > 0 ? Math.round((sku.consumed / sku.enabled) * 100 * 10) / 10 : 0,
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  const topSoftwareCost = [...topSoftwareCostLocal, ...integrationTopCost]
+    .sort((a, b) => (b.monthly_cost || 0) - (a.monthly_cost || 0))
+    .slice(0, 5);
+
+  // Monthly spend trend by category (local + integrated)
+  const spendByCategoryLocal = db.prepare(`
     SELECT category, SUM(total_licenses * cost_per_license) as monthly_cost
     FROM software_assets WHERE cost_per_license > 0
     GROUP BY category ORDER BY monthly_cost DESC
   `).all();
+  // Add cloud integration categories
+  const spendMap = {};
+  for (const r of spendByCategoryLocal) spendMap[r.category] = r.monthly_cost;
+  if (integrationSoftwareCost > 0) spendMap['Cloud SaaS (M365)'] = (spendMap['Cloud SaaS (M365)'] || 0) + integrationSoftwareCost;
+  if (cloudCost > 0) spendMap['Cloud Infrastructure'] = (spendMap['Cloud Infrastructure'] || 0) + cloudCost;
+  const spendByCategory = Object.entries(spendMap)
+    .map(([category, monthly_cost]) => ({ category, monthly_cost }))
+    .sort((a, b) => b.monthly_cost - a.monthly_cost);
 
   // Hardware cost by type
   const hardwareCostByType = db.prepare(`
