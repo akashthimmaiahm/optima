@@ -123,29 +123,46 @@ function AgentDownloadModal({ prop, onClose }) {
 }
 
 // ── Property Card ────────────────────────────────────────────────────────────
-function PropertyCard({ prop, onSelect, selecting }) {
+function PropertyCard({ prop, onSelect, selecting, online }) {
   const code = prop.vdms_id || slugToCode(prop.slug)
-  const isActive = (prop.status || 'active') === 'active'
   const loading = selecting === prop.id
+  const isOffline = online === false   // null = still checking, false = confirmed offline
+  const isChecking = online === null
   const [showAgent, setShowAgent] = useState(false)
 
   return (
     <>
-      <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-xl overflow-hidden hover:border-gray-300 dark:hover:border-[#333] transition-all duration-150">
+      <div className={`bg-white dark:bg-[#111] border rounded-xl overflow-hidden transition-all duration-150 ${
+        isOffline
+          ? 'border-red-200 dark:border-red-900/40 opacity-60 cursor-not-allowed'
+          : 'border-gray-200 dark:border-[#222] hover:border-gray-300 dark:hover:border-[#333]'
+      }`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-[#1e1e1e]">
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-semibold text-gray-600 dark:text-gray-300 tracking-widest">{code}</span>
             <Info size={13} className="text-blue-500" />
           </div>
-          <span className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} title={prop.status || 'active'} />
+          <div className="flex items-center gap-1.5">
+            {isChecking
+              ? <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-600 animate-pulse" title="Checking…" />
+              : isOffline
+                ? <span className="w-2.5 h-2.5 rounded-full bg-red-500" title="Server offline" />
+                : <span className="w-2.5 h-2.5 rounded-full bg-green-500" title="Online" />
+            }
+            {isOffline && <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wide">Offline</span>}
+          </div>
         </div>
         <div className="flex flex-col items-center justify-center py-6 px-4 gap-3">
-          <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] flex items-center justify-center overflow-hidden">
+          <div className={`w-14 h-14 rounded-full border flex items-center justify-center overflow-hidden ${
+            isOffline
+              ? 'bg-gray-100 dark:bg-[#1a1a1a] border-gray-200 dark:border-[#2a2a2a]'
+              : 'bg-gray-100 dark:bg-[#1a1a1a] border-gray-200 dark:border-[#2a2a2a]'
+          }`}>
             {prop.logo_url
               ? <img src={prop.logo_url} alt={prop.name} className="w-full h-full object-cover" onError={e => { e.target.style.display='none' }} />
-              : <Building2 size={24} className="text-gray-400" />}
+              : <Building2 size={24} className={isOffline ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400'} />}
           </div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white text-center leading-tight">{prop.name}</p>
+          <p className={`text-sm font-semibold text-center leading-tight ${isOffline ? 'text-gray-400 dark:text-gray-600' : 'text-gray-900 dark:text-white'}`}>{prop.name}</p>
           {prop.domain && <p className="text-xs text-gray-500 dark:text-gray-600 font-mono">{prop.domain}</p>}
         </div>
         <div className="flex items-center justify-between px-3 py-3 bg-gray-50 dark:bg-[#0d0d0d] border-t border-gray-100 dark:border-[#1e1e1e] gap-2">
@@ -158,11 +175,24 @@ function PropertyCard({ prop, onSelect, selecting }) {
             <Download size={11} /> Agent
           </button>
           <button
-            onClick={() => onSelect(prop)}
-            disabled={loading}
-            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors disabled:opacity-60 flex items-center gap-1.5"
+            onClick={() => !isOffline && onSelect(prop)}
+            disabled={loading || isOffline || isChecking}
+            title={isOffline ? 'Property server is offline' : ''}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+              isOffline
+                ? 'bg-red-100 dark:bg-red-900/20 text-red-400 dark:text-red-600 cursor-not-allowed border border-red-200 dark:border-red-800/40'
+                : isChecking
+                  ? 'bg-gray-200 dark:bg-[#222] text-gray-400 cursor-wait'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60'
+            }`}
           >
-            {loading ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />…</> : 'Select'}
+            {loading
+              ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />…</>
+              : isOffline
+                ? 'Offline'
+                : isChecking
+                  ? '…'
+                  : 'Select'}
           </button>
         </div>
       </div>
@@ -639,14 +669,28 @@ export default function PropertySelector() {
   const [viewMode, setViewMode] = useState('grid')
   const [loadingProps, setLoadingProps] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  // null = not yet checked, true = online, false = offline
+  const [healthMap, setHealthMap] = useState({})
+
+  const fetchHealth = async () => {
+    try {
+      const res = await api.get('/portal/properties/health')
+      setHealthMap(res.data.health || {})
+    } catch { /* health check failed silently */ }
+  }
 
   const fetchProperties = async () => {
     setLoadingProps(true)
+    // Mark all as "checking" while we load
+    setHealthMap({})
     try {
       const res = await api.get('/portal/properties')
       const props = res.data.data || []
       setAccessibleProperties(props)
       localStorage.setItem('optima_properties', JSON.stringify(props))
+      // Seed null (checking) for every property, then fetch real status
+      setHealthMap(Object.fromEntries(props.map(p => [p.id, null])))
+      fetchHealth()
     } catch { /* fall back to cached */ }
     setLoadingProps(false)
   }
@@ -834,25 +878,36 @@ export default function PropertySelector() {
               ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                   {filtered.map(prop => (
-                    <PropertyCard key={prop.id} prop={prop} onSelect={select} selecting={selecting} />
+                    <PropertyCard key={prop.id} prop={prop} onSelect={select} selecting={selecting} online={healthMap[prop.id] ?? null} />
                   ))}
                 </div>
               ) : (
                 <div className="space-y-2">
                   {filtered.map(prop => {
-                    const isActive = (prop.status || 'active') === 'active'
-                    const code = slugToCode(prop.slug)
+                    const code = prop.vdms_id || slugToCode(prop.slug)
                     const loading = selecting === prop.id
+                    const online = healthMap[prop.id] ?? null
+                    const isOffline = online === false
+                    const isChecking = online === null
                     return (
-                      <div key={prop.id} className="flex items-center gap-4 px-5 py-4 bg-white dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] hover:border-gray-300 dark:hover:border-[#2a2a2a] rounded-xl transition-all">
+                      <div key={prop.id} className={`flex items-center gap-4 px-5 py-4 border rounded-xl transition-all ${
+                        isOffline
+                          ? 'bg-gray-50 dark:bg-[#0d0d0d] border-red-200 dark:border-red-900/40 opacity-60'
+                          : 'bg-white dark:bg-[#0d0d0d] border-gray-200 dark:border-[#1e1e1e] hover:border-gray-300 dark:hover:border-[#2a2a2a]'
+                      }`}>
                         <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] flex items-center justify-center flex-shrink-0">
-                          <Building2 size={16} className="text-gray-400" />
+                          <Building2 size={16} className={isOffline ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400'} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-gray-900 dark:text-white">{prop.name}</span>
+                            <span className={`text-xs font-semibold ${isOffline ? 'text-gray-400 dark:text-gray-600' : 'text-gray-900 dark:text-white'}`}>{prop.name}</span>
                             <span className="text-[10px] font-mono text-gray-400 dark:text-gray-600">{code}</span>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} />
+                            {isChecking
+                              ? <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 animate-pulse" />
+                              : isOffline
+                                ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /><span className="text-[10px] font-semibold text-red-500 uppercase tracking-wide">Offline</span></span>
+                                : <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            }
                           </div>
                           {prop.domain && <p className="text-[10px] text-gray-400 dark:text-gray-600 font-mono mt-0.5">{prop.domain}</p>}
                         </div>
@@ -860,9 +915,22 @@ export default function PropertySelector() {
                           <HardDrive size={11} />
                           <span>{prop.asset_count ?? '—'} assets</span>
                         </div>
-                        <button onClick={() => select(prop)} disabled={loading}
-                          className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors disabled:opacity-60 flex items-center gap-1.5 flex-shrink-0">
-                          {loading ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />Loading…</> : 'Select'}
+                        <button
+                          onClick={() => !isOffline && select(prop)}
+                          disabled={loading || isOffline || isChecking}
+                          title={isOffline ? 'Property server is offline' : ''}
+                          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 ${
+                            isOffline
+                              ? 'bg-red-100 dark:bg-red-900/20 text-red-400 dark:text-red-600 cursor-not-allowed border border-red-200 dark:border-red-800/40'
+                              : isChecking
+                                ? 'bg-gray-200 dark:bg-[#222] text-gray-400 cursor-wait'
+                                : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60'
+                          }`}>
+                          {loading
+                            ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />Loading…</>
+                            : isOffline ? 'Offline'
+                            : isChecking ? '…'
+                            : 'Select'}
                         </button>
                       </div>
                     )

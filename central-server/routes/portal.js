@@ -16,6 +16,45 @@ router.post('/verify-key', (req, res) => {
   res.json({ valid: true, property: prop });
 });
 
+// GET /api/portal/properties/health — ping all property EC2s and return online/offline per id
+router.get('/properties/health', authenticate, async (req, res) => {
+  const db = getDb();
+  const http  = require('http');
+  const https = require('https');
+
+  let rows;
+  if (req.user.global_role === 'super_admin') {
+    rows = db.prepare("SELECT id, ec2_url FROM properties WHERE status='active'").all();
+  } else {
+    rows = db.prepare(`
+      SELECT p.id, p.ec2_url FROM properties p
+      JOIN user_properties up ON up.property_id = p.id
+      WHERE up.user_id = ? AND p.status = 'active'
+    `).all(req.user.id);
+  }
+
+  const ping = (url) => new Promise((resolve) => {
+    if (!url) return resolve(false);
+    try {
+      const target = new URL('/api/health', url);
+      const lib = target.protocol === 'https:' ? https : http;
+      const req = lib.get(target.toString(), { timeout: 4000 }, (r) => {
+        resolve(r.statusCode === 200);
+        r.resume();
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+    } catch { resolve(false); }
+  });
+
+  const results = await Promise.all(rows.map(async (p) => ({
+    id: p.id,
+    online: await ping(p.ec2_url),
+  })));
+
+  res.json({ health: Object.fromEntries(results.map(r => [r.id, r.online])) });
+});
+
 // GET /api/portal/properties — properties the logged-in user can access
 router.get('/properties', authenticate, (req, res) => {
   const db = getDb();
