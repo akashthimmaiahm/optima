@@ -119,75 +119,36 @@ export default function SoftwareAssets() {
         ))}
       </div>
 
-      {/* Agent List Panel (shown when agent tab is selected) */}
+      {/* Agent filter bar (shown when agent tab is selected) */}
       {sourceTab === 'agent' && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-              <Monitor size={16} /> Discovered by Agents
-            </h3>
-            <div className="relative w-64">
-              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-              <input
-                placeholder="Search by device name..."
-                className="input pl-9 py-2 text-sm"
-                value={deviceSearch}
-                onChange={e => { setDeviceSearch(e.target.value); setSelectedAgent(null) }}
-              />
-            </div>
+        <div className="card p-4 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Monitor size={16} />
+            <span className="font-medium text-gray-300">Filter by Device:</span>
           </div>
-          {agentsLoading ? (
-            <div className="text-sm text-gray-400 py-2">Loading agents...</div>
-          ) : agents.length === 0 ? (
-            <div className="text-sm text-gray-400 py-2">No agent-discovered software yet. Install agents on endpoints to auto-discover software.</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              <button
-                onClick={() => setSelectedAgent(null)}
-                className={`text-left p-3 rounded-lg border transition-all ${
-                  !selectedAgent
-                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
-                    : 'bg-white dark:bg-[#16161a] border-gray-200 dark:border-[#2a2a35] hover:border-gray-300 dark:hover:border-gray-600'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">All Agents</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold">
-                    {sourceStats.agent}
-                  </span>
-                </div>
-              </button>
-              {agents.map(agent => (
-                <button
-                  key={agent.agent_id}
-                  onClick={() => setSelectedAgent(agent.agent_id)}
-                  className={`text-left p-3 rounded-lg border transition-all ${
-                    selectedAgent === agent.agent_id
-                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
-                      : 'bg-white dark:bg-[#16161a] border-gray-200 dark:border-[#2a2a35] hover:border-gray-300 dark:hover:border-gray-600'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${agent.agent_status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                      <span className="text-sm font-medium text-gray-900 dark:text-white truncate">{agent.hostname}</span>
-                    </div>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold flex-shrink-0 ml-2">
-                      {agent.software_count}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    {agent.os_name && <span className="truncate">{agent.os_name}</span>}
-                    {agent.platform && <span className="text-gray-600">({agent.platform})</span>}
-                  </div>
-                  {agent.last_seen && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Last seen: {new Date(agent.last_seen).toLocaleString()}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
+          <select
+            className="input w-56"
+            value={selectedAgent || ''}
+            onChange={e => { setSelectedAgent(e.target.value || null); setDeviceSearch('') }}
+          >
+            <option value="">All Devices ({sourceStats.agent} apps)</option>
+            {agents.map(agent => (
+              <option key={agent.agent_id} value={agent.agent_id}>
+                {agent.hostname} ({agent.software_count} apps)
+              </option>
+            ))}
+          </select>
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+            <input
+              placeholder="Search by device name..."
+              className="input pl-9 py-2 text-sm"
+              value={deviceSearch}
+              onChange={e => { setDeviceSearch(e.target.value); setSelectedAgent(null) }}
+            />
+          </div>
+          {agents.length === 0 && !agentsLoading && (
+            <span className="text-xs text-gray-500">No agent-discovered software yet. Install agents on endpoints.</span>
           )}
         </div>
       )}
