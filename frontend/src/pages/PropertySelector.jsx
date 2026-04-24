@@ -39,27 +39,30 @@ function AgentDownloadModal({ prop, onClose }) {
       label: 'Windows Agent',
       icon: Monitor,
       color: 'text-blue-500',
-      file: `optima-agent-${slug}-windows.exe`,
+      ext: '.bat',
+      file: `optima-agent-install.bat`,
       downloadUrl: `/api/agents/windows/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as Administrator:\noptima-agent-${slug}-windows.exe`,
+      install: `# Right-click > Run as Administrator:\noptima-agent-install.bat`,
     },
     {
       id: 'linux',
       label: 'Linux Agent',
       icon: Terminal,
       color: 'text-green-500',
-      file: `optima-agent-${slug}-linux.exe`,
+      ext: '.sh',
+      file: `optima-agent-install-linux.sh`,
       downloadUrl: `/api/agents/linux/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nsudo ./optima-agent-${slug}-linux.exe`,
+      install: `# Run as root:\nchmod +x optima-agent-install-linux.sh\nsudo ./optima-agent-install-linux.sh`,
     },
     {
       id: 'mac',
       label: 'macOS Agent',
       icon: Apple,
       color: 'text-gray-500 dark:text-gray-300',
-      file: `optima-agent-${slug}-macos.exe`,
+      ext: '.sh',
+      file: `optima-agent-install-macos.sh`,
       downloadUrl: `/api/agents/mac/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nsudo ./optima-agent-${slug}-macos.exe`,
+      install: `# Run as root:\nchmod +x optima-agent-install-macos.sh\nsudo ./optima-agent-install-macos.sh`,
     },
   ]
 
@@ -91,7 +94,7 @@ function AgentDownloadModal({ prop, onClose }) {
                 <div className="flex items-center gap-2">
                   <agent.icon size={15} className={agent.color} />
                   <span className="text-xs font-semibold text-gray-900 dark:text-white">{agent.label}</span>
-                  <span className="text-[10px] text-gray-400 font-mono">.exe</span>
+                  <span className="text-[10px] text-gray-400 font-mono">{agent.ext}</span>
                 </div>
                 <a
                   href={agent.downloadUrl}

@@ -28,16 +28,16 @@ router.get('/:platform/install', (req, res) => {
   const serverUrl = `${req.protocol}://${req.get('host')}`;
 
   if (platform === 'windows') {
-    const script = generateWindowsScript(propertyKey, serverUrl);
+    const script = generateWindowsBat(propertyKey, serverUrl);
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', 'attachment; filename="optima-agent-install.exe"');
+    res.setHeader('Content-Disposition', 'attachment; filename="optima-agent-install.bat"');
     return res.send(script);
   }
 
   if (platform === 'linux' || platform === 'mac') {
     const script = generateUnixScript(propertyKey, serverUrl);
     res.setHeader('Content-Type', 'application/octet-stream');
-    const fname = platform === 'linux' ? 'optima-agent-install-linux.exe' : 'optima-agent-install-macos.exe';
+    const fname = platform === 'linux' ? 'optima-agent-install-linux.sh' : 'optima-agent-install-macos.sh';
     res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
     return res.send(script);
   }
@@ -45,103 +45,93 @@ router.get('/:platform/install', (req, res) => {
   res.status(400).json({ error: 'Unknown platform. Use: windows, linux, mac' });
 });
 
-// ── Windows PowerShell installer (self-contained, downloads agent from server) ─
-function generateWindowsScript(propertyKey, serverUrl) {
-  return `#Requires -RunAsAdministrator
-<#
-.SYNOPSIS
-    Optima Property Agent - Windows Installer (Auto-generated)
-.DESCRIPTION
-    Downloads and installs the Optima monitoring agent as a Windows Scheduled Task.
-    Run as Administrator: powershell -ExecutionPolicy Bypass -File optima-agent-install.ps1
-#>
-$ErrorActionPreference = "Stop"
-$PropertyKey = "${propertyKey}"
-$ServerUrl   = "${serverUrl}"
-$AgentDir    = "C:\\Program Files\\Optima\\agent"
+// ── Windows .bat installer (self-contained batch that launches PowerShell inline) ─
+function generateWindowsBat(propertyKey, serverUrl) {
+  // .bat wrapper: elevates to admin via PowerShell, then runs the embedded PS script
+  return `@echo off
+:: ============================================================================
+:: Optima Agent Installer for Windows (Auto-generated)
+:: Right-click > Run as Administrator, or open CMD as Admin and run this file.
+:: ============================================================================
+NET SESSION >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo   [ERROR] Please run this file as Administrator.
+    echo   Right-click the file and select "Run as administrator".
+    echo.
+    pause
+    exit /b 1
+)
 
-Write-Host ""
-Write-Host "  Optima Agent Installer for Windows" -ForegroundColor Cyan
-Write-Host "  ====================================" -ForegroundColor Cyan
-Write-Host ""
+echo.
+echo   ====================================================
+echo     Optima Agent Installer for Windows
+echo   ====================================================
+echo.
 
-# Validate key against server
-Write-Host "  Validating property key..." -ForegroundColor Yellow
-try {
-    $body = @{ property_key = $PropertyKey } | ConvertTo-Json
-    $resp = Invoke-RestMethod -Uri "$ServerUrl/api/portal/verify-key" \`
-        -Method POST -Body $body -ContentType "application/json" \`
-        -SkipCertificateCheck -ErrorAction Stop
-    Write-Host "  Property: $($resp.property.name)" -ForegroundColor Green
-    Write-Host "  Plan    : $($resp.property.plan)" -ForegroundColor Green
-} catch {
-    Write-Host "  ERROR: Invalid property key or cannot reach server." -ForegroundColor Red
-    exit 1
-}
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+$ErrorActionPreference = 'Stop'; ^
+$PropertyKey = '${propertyKey}'; ^
+$ServerUrl = '${serverUrl}'; ^
+$AgentDir = 'C:\\Program Files\\Optima\\agent'; ^
+Write-Host '  Validating property key...' -ForegroundColor Yellow; ^
+try { ^
+  $body = @{ property_key = $PropertyKey } ^| ConvertTo-Json; ^
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
+  try { $resp = Invoke-RestMethod -Uri \\"$ServerUrl/api/portal/verify-key\\" -Method POST -Body $body -ContentType 'application/json' -SkipCertificateCheck -ErrorAction Stop } catch { $resp = Invoke-RestMethod -Uri \\"$ServerUrl/api/portal/verify-key\\" -Method POST -Body $body -ContentType 'application/json' -ErrorAction Stop }; ^
+  Write-Host \\"  Property: $($resp.property.name)\\" -ForegroundColor Green; ^
+  Write-Host \\"  Plan    : $($resp.property.plan)\\" -ForegroundColor Green; ^
+} catch { ^
+  Write-Host '  ERROR: Invalid property key or cannot reach server.' -ForegroundColor Red; ^
+  Read-Host '  Press Enter to exit'; exit 1 ^
+}; ^
+Write-Host ''; ^
+Write-Host '  Checking Node.js...' -ForegroundColor Yellow; ^
+$node = Get-Command node -ErrorAction SilentlyContinue; ^
+if (-not $node) { ^
+  Write-Host '  Installing Node.js 20 LTS (this may take a minute)...' -ForegroundColor Yellow; ^
+  $nodeUrl = 'https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi'; ^
+  $msi = \\"$env:TEMP\\node-install.msi\\"; ^
+  Invoke-WebRequest -Uri $nodeUrl -OutFile $msi -UseBasicParsing; ^
+  Start-Process msiexec.exe -Wait -ArgumentList \\"/i `\\"$msi`\\" /quiet /norestart\\"; ^
+  $env:PATH += ';C:\\Program Files\\nodejs'; ^
+  Write-Host '  Node.js installed.' -ForegroundColor Green ^
+} else { ^
+  Write-Host \\"  Node.js: $(node --version)\\" -ForegroundColor Green ^
+}; ^
+Write-Host ''; ^
+Write-Host '  Downloading agent files...' -ForegroundColor Yellow; ^
+New-Item -ItemType Directory -Path $AgentDir -Force ^| Out-Null; ^
+try { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/agent.js\\" -OutFile \\"$AgentDir\\agent.js\\" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/agent.js\\" -OutFile \\"$AgentDir\\agent.js\\" -UseBasicParsing }; ^
+try { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/package.json\\" -OutFile \\"$AgentDir\\package.json\\" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/package.json\\" -OutFile \\"$AgentDir\\package.json\\" -UseBasicParsing }; ^
+Write-Host '  Writing configuration...' -ForegroundColor Yellow; ^
+$config = @{ property_key = $PropertyKey; server_url = $ServerUrl; agent_id = $null; interval_hours = 24 } ^| ConvertTo-Json; ^
+Set-Content -Path \\"$AgentDir\\config.json\\" -Value $config; ^
+Write-Host '  Installing dependencies...' -ForegroundColor Yellow; ^
+Push-Location $AgentDir; ^
+$npmCmd = Get-Command npm -ErrorAction SilentlyContinue; ^
+if ($npmCmd) { ^& npm install --production --silent 2^>^&1 ^| Out-Null } else { Write-Host '  WARNING: npm not found, skipping dependencies' -ForegroundColor Yellow }; ^
+Pop-Location; ^
+Write-Host '  Creating Scheduled Task...' -ForegroundColor Yellow; ^
+$action = New-ScheduledTaskAction -Execute 'node' -Argument \\"`\\"$AgentDir\\agent.js`\\"\\" -WorkingDirectory $AgentDir; ^
+$trigger1 = New-ScheduledTaskTrigger -AtStartup; ^
+$trigger2 = New-ScheduledTaskTrigger -Daily -At '03:00AM'; ^
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5); ^
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; ^
+Register-ScheduledTask -TaskName 'OptimaAgent' -Action $action -Trigger $trigger1,$trigger2 -Settings $settings -Principal $principal -Description 'Optima HAM/SAM monitoring agent' -Force ^| Out-Null; ^
+Write-Host ''; ^
+Write-Host '  Running initial inventory scan...' -ForegroundColor Yellow; ^
+Start-Process 'node' -ArgumentList \\"`\\"$AgentDir\\agent.js`\\" --once\\" -WorkingDirectory $AgentDir -Wait -NoNewWindow; ^
+Write-Host ''; ^
+Write-Host '  ============================================' -ForegroundColor Green; ^
+Write-Host '    Installation complete!' -ForegroundColor Green; ^
+Write-Host '  ============================================' -ForegroundColor Green; ^
+Write-Host '  Agent runs daily at 03:00 and on startup.' -ForegroundColor Cyan; ^
+Write-Host \\"  Logs: $AgentDir\\agent.log\\" -ForegroundColor Cyan; ^
+Write-Host ''
 
-# Check / install Node.js
-Write-Host ""
-Write-Host "  Checking Node.js..." -ForegroundColor Yellow
-$node = Get-Command node -ErrorAction SilentlyContinue
-if (-not $node) {
-    Write-Host "  Installing Node.js 20 LTS..." -ForegroundColor Yellow
-    $nodeUrl = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi"
-    $msi = "$env:TEMP\\node-install.msi"
-    Invoke-WebRequest -Uri $nodeUrl -OutFile $msi
-    Start-Process msiexec.exe -Wait -ArgumentList "/i \`"$msi\`" /quiet /norestart"
-    $env:PATH += ";C:\\Program Files\\nodejs"
-} else {
-    Write-Host "  Node.js: $((node --version 2>&1))" -ForegroundColor Green
-}
-
-# Download agent files from server
-Write-Host ""
-Write-Host "  Downloading agent files..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Path $AgentDir -Force | Out-Null
-
-Invoke-WebRequest -Uri "$ServerUrl/api/agents/agent.js"      -OutFile "$AgentDir\\agent.js"      -UseBasicParsing
-Invoke-WebRequest -Uri "$ServerUrl/api/agents/package.json"  -OutFile "$AgentDir\\package.json"  -UseBasicParsing
-
-# Write config
-$config = @{
-    property_key   = $PropertyKey
-    server_url     = $ServerUrl
-    agent_id       = $null
-    interval_hours = 24
-} | ConvertTo-Json
-Set-Content -Path "$AgentDir\\config.json" -Value $config
-
-# Install npm dependencies
-Write-Host "  Installing dependencies..." -ForegroundColor Yellow
-Push-Location $AgentDir
-& npm install --production --silent
-Pop-Location
-
-# Create Scheduled Task
-Write-Host "  Creating Scheduled Task..." -ForegroundColor Yellow
-$action   = New-ScheduledTaskAction -Execute "node" -Argument "\`"$AgentDir\\agent.js\`"" -WorkingDirectory $AgentDir
-$trigger1 = New-ScheduledTaskTrigger -AtStartup
-$trigger2 = New-ScheduledTaskTrigger -Daily -At "03:00AM"
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-
-Register-ScheduledTask -TaskName "OptimaAgent" \`
-    -Action $action -Trigger $trigger1,$trigger2 \`
-    -Settings $settings -Principal $principal \`
-    -Description "Optima HAM/SAM monitoring agent" \`
-    -Force | Out-Null
-
-# Run once immediately
-Write-Host ""
-Write-Host "  Running initial inventory scan..." -ForegroundColor Yellow
-Start-Process "node" -ArgumentList "\`"$AgentDir\\agent.js\`" --once" \`
-    -WorkingDirectory $AgentDir -Wait -NoNewWindow
-
-Write-Host ""
-Write-Host "  Installation complete!" -ForegroundColor Green
-Write-Host "  Agent will run daily at 03:00 and on system startup." -ForegroundColor Cyan
-Write-Host "  Logs: $AgentDir\\agent.log" -ForegroundColor Cyan
-Write-Host ""
+echo.
+pause
 `;
 }
 
