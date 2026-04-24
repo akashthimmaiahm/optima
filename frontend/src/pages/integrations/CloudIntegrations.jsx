@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, XCircle, RefreshCw, Zap, Settings, Info, Key, Globe, Users, Shield, AlertCircle, ChevronDown, ChevronUp, Plus, Search, BookOpen, ExternalLink } from 'lucide-react'
+import { CheckCircle2, XCircle, RefreshCw, Zap, Settings, Info, Key, Globe, Users, Shield, AlertCircle, ChevronDown, ChevronUp, Plus, Search, BookOpen, ExternalLink, Trash2 } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import Modal from '../../components/common/Modal'
@@ -519,6 +519,12 @@ function IntegrationCard({ integration, canManage, onRefresh }) {
     onRefresh()
   }
 
+  const handleDelete = async () => {
+    if (!confirm(`Remove ${integration.name}? This will delete all configuration.`)) return
+    await api.delete(`/integrations/${integration.id}`)
+    onRefresh()
+  }
+
   return (
     <>
       <div className={`card p-5 flex flex-col gap-3 transition-all ${!isConnected ? 'opacity-75' : ''}`}>
@@ -593,9 +599,14 @@ function IntegrationCard({ integration, canManage, onRefresh }) {
                 </button>
               </>
             ) : (
-              <button onClick={() => setConfigModal(true)} className="btn-primary text-xs py-1.5 w-full justify-center">
-                <Zap size={14} /> Connect & Configure
-              </button>
+              <>
+                <button onClick={() => setConfigModal(true)} className="btn-primary text-xs py-1.5 flex-1 justify-center">
+                  <Zap size={14} /> Connect & Configure
+                </button>
+                <button onClick={handleDelete} className="btn-secondary text-xs py-1.5 px-3 text-red-500 hover:text-red-600" title="Remove">
+                  <Trash2 size={14} />
+                </button>
+              </>
             )}
           </div>
         )}
