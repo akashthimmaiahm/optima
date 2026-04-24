@@ -343,6 +343,11 @@ function initDatabase() {
   try { db.exec("ALTER TABLE hardware_assets ADD COLUMN warranty_provider TEXT") } catch(e) {}
   try { db.exec("ALTER TABLE hardware_assets ADD COLUMN warranty_type TEXT DEFAULT 'standard'") } catch(e) {}
   try { db.exec("ALTER TABLE software_assets ADD COLUMN ai_platform INTEGER DEFAULT 0") } catch(e) {}
+  try { db.exec("ALTER TABLE software_assets ADD COLUMN source TEXT DEFAULT 'manual'") } catch(e) {}
+  try { db.exec("ALTER TABLE software_assets ADD COLUMN discovered_by_agent TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE software_assets ADD COLUMN agent_hostname TEXT") } catch(e) {}
+  // Backfill source for existing agent-discovered rows
+  try { db.exec("UPDATE software_assets SET source='agent' WHERE notes='Agent-discovered' AND (source IS NULL OR source='manual')") } catch(e) {}
 
   seedDefaultProperty(db);
   seedProductionUsers(db);

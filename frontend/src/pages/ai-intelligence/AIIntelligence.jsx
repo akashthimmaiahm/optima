@@ -27,6 +27,8 @@ export default function AIIntelligence() {
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [sources, setSources] = useState([])
+  const [sourceFilter, setSourceFilter] = useState('all')
 
   const load = () => {
     setLoading(true)
@@ -35,6 +37,7 @@ export default function AIIntelligence() {
       .then(r => {
         setAnomalies(r.data.anomalies || [])
         setStats(r.data.stats || { active: 0, critical: 0, total: 0, resolved: 0 })
+        setSources(r.data.sources || [])
         if (r.data.error) setError(r.data.error)
       })
       .catch(e => setError(e.message))
@@ -52,9 +55,10 @@ export default function AIIntelligence() {
   const resolve = (id) => setAnomalies(prev => prev.map(a => a.id === id ? { ...a, status: 'resolved' } : a))
 
   const displayed = anomalies.filter(a => {
-    if (filter === 'active') return a.status === 'active'
-    if (filter === 'critical') return a.severity === 'critical'
-    if (filter === 'resolved') return a.status === 'resolved'
+    if (filter === 'active' && a.status !== 'active') return false
+    if (filter === 'critical' && a.severity !== 'critical') return false
+    if (filter === 'resolved' && a.status !== 'resolved') return false
+    if (sourceFilter !== 'all' && a.source !== sourceFilter) return false
     return true
   })
 
@@ -100,20 +104,48 @@ export default function AIIntelligence() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2">
-        {[['all', 'All'], ['active', 'Active'], ['critical', 'Critical'], ['resolved', 'Resolved']].map(([v, l]) => (
-          <button
-            key={v}
-            onClick={() => setFilter(v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              filter === v
-                ? 'bg-blue-600 text-white'
-                : 'bg-[#1a1a1f] border border-[#2a2a35] text-gray-400 hover:text-gray-200'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex gap-2">
+          {[['all', 'All'], ['active', 'Active'], ['critical', 'Critical'], ['resolved', 'Resolved']].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setFilter(v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                filter === v
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-[#1a1a1f] border border-[#2a2a35] text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        {sources.length > 1 && (
+          <>
+            <div className="w-px h-5 bg-[#2a2a35]" />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSourceFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  sourceFilter === 'all'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-[#1a1a1f] border border-[#2a2a35] text-gray-400 hover:text-gray-200'
+                }`}
+              >All Sources</button>
+              {sources.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSourceFilter(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    sourceFilter === s
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-[#1a1a1f] border border-[#2a2a35] text-gray-400 hover:text-gray-200'
+                  }`}
+                >{s}</button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Loading / Error / Empty states */}
@@ -157,6 +189,11 @@ export default function AIIntelligence() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${CAT_COLORS[a.category] || 'bg-gray-800 text-gray-400'}`}>
                         {a.category}
                       </span>
+                      {a.source && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-800/40">
+                          {a.source}
+                        </span>
+                      )}
                       {a.cost_impact && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-300">{a.cost_impact}</span>
                       )}

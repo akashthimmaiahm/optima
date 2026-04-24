@@ -101,17 +101,21 @@ router.post('/inventory', (req, res) => {
     }
   }
 
+  // Get agent hostname for tagging
+  const agentRow = db.prepare("SELECT hostname FROM agents WHERE agent_id=?").get(agent_id);
+  const agentHostname = agentRow?.hostname || hardware.hostname || '';
+
   // Upsert software assets (only insert new ones to avoid flooding)
   let inserted = 0;
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO software_assets
-      (name, vendor, version, category, license_type, total_licenses, used_licenses, status, notes, property_id)
-    VALUES (?, ?, ?, 'Discovered', 'agent', 0, 0, 'active', 'Agent-discovered', ?)
+      (name, vendor, version, category, license_type, total_licenses, used_licenses, status, notes, property_id, source, discovered_by_agent, agent_hostname)
+    VALUES (?, ?, ?, 'Discovered', 'agent', 0, 0, 'active', 'Agent-discovered', ?, 'agent', ?, ?)
   `);
   const upsertMany = db.transaction((apps) => {
     for (const app of apps) {
       if (!app.name || app.name.length < 2) continue;
-      const result = insertStmt.run(app.name, app.vendor || '', app.version || '', propId);
+      const result = insertStmt.run(app.name, app.vendor || '', app.version || '', propId, agent_id, agentHostname);
       if (result.changes > 0) inserted++;
     }
   });
