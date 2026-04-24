@@ -3,8 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
+const http = require('http');
 const { initDatabase } = require('./database/init');
 const { proxyMiddleware } = require('./routes/proxy');
+const { initWebSocketHub, getHealthMap } = require('./ws-hub');
 
 const app  = express();
 const PORT = parseInt(process.env.PORT || '4000');
@@ -49,8 +51,35 @@ const VERSION_MANIFEST = {
 
 app.get('/api/version', (_req, res) => res.json(VERSION_MANIFEST));
 
-// ── Trigger client update (super admin only, proxied to property EC2) ──────────
-// This is handled by the proxy — property EC2 exposes POST /api/update/apply
+// ── Agent proxy: resolve property from property_key in body ──────────────────
+// Agents don't have JWT tokens, so we resolve the property from the key
+app.use('/api/agent', (req, res, next) => {
+  const propertyKey = req.body?.property_key;
+  if (!propertyKey && !req.body?.agent_id) return next();
+  const db = require('./database/init').getDb();
+  // Try property_key first
+  let prop = null;
+  if (propertyKey) {
+    prop = db.prepare("SELECT id, ec2_url FROM properties WHERE property_key=? AND status='active'").get(propertyKey);
+  }
+  // For heartbeat/inventory, look up agent_id to find property
+  if (!prop && req.body?.agent_id) {
+    // We don't store agents centrally, so just try all properties with ec2_url
+    // Forward to the property that has this agent registered
+    const props = db.prepare("SELECT id, ec2_url FROM properties WHERE ec2_url IS NOT NULL AND status='active'").all();
+    if (props.length === 1) prop = props[0];
+    else {
+      // Multi-property: use X-Property-Id if available, or try first one
+      const hdr = req.headers['x-property-id'];
+      if (hdr) prop = props.find(p => p.id === parseInt(hdr));
+      if (!prop) prop = props[0];
+    }
+  }
+  if (prop) {
+    req.headers['x-property-id'] = String(prop.id);
+  }
+  next();
+}, proxyMiddleware);
 
 // ── Proxy: ALL other /api/* → selected property EC2 ──────────────────────────
 // Must come AFTER the central API routes above
@@ -63,7 +92,10 @@ const FRONTEND_DIST = process.env.FRONTEND_DIST
 app.use(express.static(FRONTEND_DIST));
 app.get('*', (_req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')));
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = http.createServer(app);
+initWebSocketHub(server);
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🌐  Optima Central Portal`);
   console.log(`🚀  Running on http://0.0.0.0:${PORT}`);
   console.log(`🔑  Auth  : POST /api/auth/login`);

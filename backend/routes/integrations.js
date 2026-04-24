@@ -101,6 +101,127 @@ async function syncMicrosoft365(integration) {
   };
 }
 
+// ── AWS IAM/EC2 sync helper ──────────────────────────────────────────────────
+
+const AWS_ALL_REGIONS = [
+  'us-east-1','us-east-2','us-west-1','us-west-2',
+  'eu-west-1','eu-west-2','eu-west-3','eu-central-1','eu-north-1','eu-south-1',
+  'ap-south-1','ap-southeast-1','ap-southeast-2','ap-northeast-1','ap-northeast-2','ap-northeast-3','ap-east-1',
+  'sa-east-1','ca-central-1','me-south-1','af-south-1',
+];
+
+async function syncAWS(integration) {
+  const config = typeof integration.config === 'string' ? JSON.parse(integration.config) : (integration.config || {});
+  const accessKeyId = integration.client_id;
+  const secretAccessKey = config.client_secret;
+  const region = config.region || 'us-east-1';
+
+  if (!accessKeyId || !secretAccessKey) throw new Error('Missing Access Key ID or Secret Access Key');
+
+  const credentials = { accessKeyId, secretAccessKey };
+
+  // IAM is global — fetch users, roles, policies
+  const { IAMClient, ListUsersCommand, ListRolesCommand, ListPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand } = require('@aws-sdk/client-iam');
+  const iamClient = new IAMClient({ region: 'us-east-1', credentials });
+
+  const [usersResp, rolesResp, policiesResp] = await Promise.all([
+    iamClient.send(new ListUsersCommand({ MaxItems: 1000 })),
+    iamClient.send(new ListRolesCommand({ MaxItems: 1000 })),
+    iamClient.send(new ListPoliciesCommand({ Scope: 'Local', MaxItems: 1000 })),
+  ]);
+
+  const iamUsers = usersResp.Users || [];
+  const iamRoles = rolesResp.Roles || [];
+  const iamPolicies = policiesResp.Policies || [];
+
+  // Enrich users with access keys and MFA
+  const enrichedUsers = await Promise.all(iamUsers.slice(0, 100).map(async (u) => {
+    try {
+      const [keysResp, mfaResp] = await Promise.all([
+        iamClient.send(new ListAccessKeysCommand({ UserName: u.UserName })),
+        iamClient.send(new ListMFADevicesCommand({ UserName: u.UserName })),
+      ]);
+      return {
+        name: u.UserName,
+        arn: u.Arn,
+        created: u.CreateDate,
+        password_last_used: u.PasswordLastUsed || null,
+        access_keys: (keysResp.AccessKeyMetadata || []).length,
+        mfa_enabled: (mfaResp.MFADevices || []).length > 0,
+      };
+    } catch {
+      return { name: u.UserName, arn: u.Arn, created: u.CreateDate };
+    }
+  }));
+
+  // EC2 instances — across selected region(s)
+  const { EC2Client, DescribeInstancesCommand, DescribeRegionsCommand } = require('@aws-sdk/client-ec2');
+  let regionsToScan = [region];
+  if (region === 'all' || region === 'All Regions') {
+    try {
+      const ec2 = new EC2Client({ region: 'us-east-1', credentials });
+      const regResp = await ec2.send(new DescribeRegionsCommand({}));
+      regionsToScan = (regResp.Regions || []).map(r => r.RegionName);
+    } catch {
+      regionsToScan = AWS_ALL_REGIONS;
+    }
+  }
+
+  const allInstances = [];
+  await Promise.all(regionsToScan.map(async (r) => {
+    try {
+      const ec2 = new EC2Client({ region: r, credentials });
+      const resp = await ec2.send(new DescribeInstancesCommand({ MaxResults: 500 }));
+      for (const reservation of (resp.Reservations || [])) {
+        for (const inst of (reservation.Instances || [])) {
+          const nameTag = (inst.Tags || []).find(t => t.Key === 'Name');
+          allInstances.push({
+            id: inst.InstanceId,
+            name: nameTag ? nameTag.Value : inst.InstanceId,
+            type: inst.InstanceType,
+            state: inst.State ? inst.State.Name : 'unknown',
+            region: r,
+            az: inst.Placement ? inst.Placement.AvailabilityZone : r,
+            public_ip: inst.PublicIpAddress || null,
+            private_ip: inst.PrivateIpAddress || null,
+            platform: inst.PlatformDetails || inst.Platform || 'Linux',
+            launch_time: inst.LaunchTime,
+          });
+        }
+      }
+    } catch {}
+  }));
+
+  // S3 buckets (global)
+  let buckets = [];
+  try {
+    const { S3Client, ListBucketsCommand } = require('@aws-sdk/client-s3');
+    const s3 = new S3Client({ region: 'us-east-1', credentials });
+    const resp = await s3.send(new ListBucketsCommand({}));
+    buckets = (resp.Buckets || []).map(b => ({ name: b.Name, created: b.CreationDate }));
+  } catch {}
+
+  return {
+    users_synced: iamUsers.length,
+    licenses_discovered: allInstances.length,
+    sync_details: {
+      iam_users: enrichedUsers,
+      iam_roles: iamRoles.map(r => ({ name: r.RoleName, arn: r.Arn, created: r.CreateDate })),
+      iam_policies: iamPolicies.map(p => ({ name: p.PolicyName, arn: p.Arn, attachments: p.AttachmentCount })),
+      ec2_instances: allInstances,
+      s3_buckets: buckets,
+      total_iam_users: iamUsers.length,
+      total_iam_roles: iamRoles.length,
+      total_iam_policies: iamPolicies.length,
+      total_ec2_instances: allInstances.length,
+      total_s3_buckets: buckets.length,
+      regions_scanned: regionsToScan,
+      running_instances: allInstances.filter(i => i.state === 'running').length,
+      stopped_instances: allInstances.filter(i => i.state === 'stopped').length,
+    },
+  };
+}
+
 // Add a new integration from catalog
 router.post('/', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
   const db = getDb();
@@ -177,6 +298,8 @@ router.post('/:id/sync', authenticate, authorize('super_admin', 'it_admin', 'it_
     // Route to the right connector based on provider/name
     if (integration.name === 'Microsoft 365' || integration.name === 'Microsoft Intune') {
       result = await syncMicrosoft365(integration);
+    } else if (integration.name === 'AWS IAM') {
+      result = await syncAWS(integration);
     } else {
       // Generic: just update timestamp for unsupported connectors
       db.prepare(`UPDATE cloud_integrations SET last_sync=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(req.params.id);

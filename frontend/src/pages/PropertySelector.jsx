@@ -937,6 +937,7 @@ export default function PropertySelector() {
   const [deleteProp, setDeleteProp]     = useState(null)
   // null = not yet checked, true = online, false = offline
   const [healthMap, setHealthMap] = useState({})
+  const wsRef = useRef(null)
 
   const fetchHealth = async () => {
     try {
@@ -944,6 +945,41 @@ export default function PropertySelector() {
       setHealthMap(res.data.health || {})
     } catch { /* health check failed silently */ }
   }
+
+  // WebSocket for real-time health status
+  useEffect(() => {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const wsUrl = `${proto}://${window.location.host}/ws?role=frontend`
+    let ws = null
+    let reconnectTimer = null
+
+    function connect() {
+      try { ws = new WebSocket(wsUrl) } catch { return }
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data)
+          if (msg.type === 'status' && msg.health) {
+            setHealthMap(prev => {
+              const next = { ...prev }
+              for (const id of Object.keys(next)) {
+                next[id] = !!msg.health[id]
+              }
+              return next
+            })
+          }
+        } catch {}
+      }
+      ws.onclose = () => { reconnectTimer = setTimeout(connect, 5000) }
+      ws.onerror = () => { ws.close() }
+      wsRef.current = ws
+    }
+    connect()
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (ws && ws.readyState <= 1) ws.close()
+    }
+  }, [])
 
   const fetchProperties = async () => {
     setLoadingProps(true)

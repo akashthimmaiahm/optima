@@ -105,6 +105,15 @@ function generatePoNumber(db) {
   return `${prefix}${String(lastNum + 1).padStart(4, '0')}`;
 }
 
+// GET /approvers - list users eligible to approve (for dropdown)
+router.get('/approvers', authenticate, (req, res) => {
+  const db = getDb();
+  const users = db.prepare(
+    "SELECT id, name, email, role FROM users WHERE is_active = 1 AND role IN ('super_admin', 'it_admin', 'it_manager', 'admin') ORDER BY name"
+  ).all();
+  res.json({ data: users });
+});
+
 // GET / - list with filters
 router.get('/', authenticate, (req, res) => {
   const db = getDb();
@@ -228,7 +237,17 @@ router.post('/:id/submit', authenticate, (req, res) => {
   if (!row) return res.status(404).json({ error: 'Procurement request not found' });
   if (row.status !== 'draft') return res.status(400).json({ error: 'Only draft requests can be submitted' });
 
-  db.prepare(`UPDATE procurement_requests SET status = 'pending_approval', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  const { approver_id } = req.body || {};
+  if (approver_id) {
+    const approver = db.prepare('SELECT id, name FROM users WHERE id = ?').get(approver_id);
+    if (approver) {
+      db.prepare(`UPDATE procurement_requests SET status = 'pending_approval', approver_id = ?, approver_name = ?, updated_at = datetime('now') WHERE id = ?`).run(approver.id, approver.name, req.params.id);
+    } else {
+      db.prepare(`UPDATE procurement_requests SET status = 'pending_approval', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    }
+  } else {
+    db.prepare(`UPDATE procurement_requests SET status = 'pending_approval', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  }
   const updated = db.prepare(`SELECT * FROM procurement_requests WHERE id = ?`).get(req.params.id);
   res.json({ data: updated, message: 'Request submitted for approval' });
 });

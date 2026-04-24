@@ -123,6 +123,8 @@ export default function Procurement() {
   const [approvedCost, setApprovedCost]   = useState('')
   const [receivedNotes, setReceivedNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [approvers, setApprovers]         = useState([])
+  const [selectedApprover, setSelectedApprover] = useState('')
 
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = useCallback(() => {
@@ -140,6 +142,7 @@ export default function Procurement() {
   useEffect(() => {
     load()
     api.get('/vendors').then(r => setVendors(r.data.data || [])).catch(() => {})
+    api.get('/procurement/approvers').then(r => setApprovers(r.data.data || [])).catch(() => {})
   }, [load])
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -252,7 +255,7 @@ export default function Procurement() {
     }
   }
 
-  const handleSubmitPR  = (item) => doAction(`/procurement/${item.id}/submit`)
+  const handleSubmitPR  = (item) => doAction(`/procurement/${item.id}/submit`, { approver_id: selectedApprover || null })
   const handleApprovePR = (item) => doAction(`/procurement/${item.id}/approve`, { approval_notes: approvalNotes, approved_cost: approvedCost })
   const handleRejectPR  = (item) => doAction(`/procurement/${item.id}/reject`,  { approval_notes: approvalNotes })
   const handleIssuePO   = (item) => doAction(`/procurement/${item.id}/issue-po`)
@@ -777,16 +780,32 @@ export default function Procurement() {
 
               {/* ── Submit section ────────────────────────────────────────── */}
               {detailItem.status === 'draft' && (
-                <div className="border border-gray-200 dark:border-[#2a2a35] rounded-xl p-4 bg-gray-50 dark:bg-[#0e0e12] flex items-center justify-between">
+                <div className="border border-gray-200 dark:border-[#2a2a35] rounded-xl p-4 space-y-3 bg-gray-50 dark:bg-[#0e0e12]">
                   <p className="text-sm text-gray-500">Ready to submit this request for approval?</p>
-                  <button
-                    onClick={() => handleSubmitPR(detailItem)}
-                    disabled={actionLoading}
-                    className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                    Submit for Approval
-                  </button>
+                  <div>
+                    <label className="label flex items-center gap-1.5"><User size={13} /> Assign Approver</label>
+                    <select
+                      className="input"
+                      value={selectedApprover}
+                      onChange={e => setSelectedApprover(e.target.value)}
+                    >
+                      <option value="">— Auto (any approver) —</option>
+                      {approvers.map(a => (
+                        <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-0.5">Select who should review and approve this request</p>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => handleSubmitPR(detailItem)}
+                      disabled={actionLoading}
+                      className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                      Submit for Approval
+                    </button>
+                  </div>
                 </div>
               )}
 

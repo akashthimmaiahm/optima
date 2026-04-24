@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, RefreshCw, CheckCircle, XCircle, Eye, Zap, Shield, Server, TrendingDown, AlertTriangle } from 'lucide-react'
+import { Search, RefreshCw, CheckCircle, XCircle, Eye, Zap, Shield, Server, TrendingDown, AlertTriangle, Filter } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import { useAuth } from '../../contexts/AuthContext'
@@ -11,11 +11,31 @@ const statusVariant = {
   running: 'success', stopped: 'default', deallocated: 'default', active: 'success'
 }
 
+function Pagination({ page, totalPages, total, perPage, setPage }) {
+  if (totalPages <= 1) return null
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+      <p className="text-xs text-gray-500">Showing {(page-1)*perPage+1}-{Math.min(page*perPage, total)} of {total}</p>
+      <div className="flex gap-1">
+        <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Prev</button>
+        {Array.from({length: totalPages}, (_, i) => i+1).slice(Math.max(0, page-3), page+2).map(p => (
+          <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-xs rounded ${page===p ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{p}</button>
+        ))}
+        <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Next</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── SaaS Discovery — real SKUs from connected integrations ───────────────
 function DiscoveredApps({ canManage }) {
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const perPage = 15
 
   const load = () => {
     setLoading(true)
@@ -25,16 +45,29 @@ function DiscoveredApps({ canManage }) {
   }
   useEffect(() => { load() }, [])
 
-  const filtered = apps.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()))
-  const totalSeats = apps.reduce((s, a) => s + (a.total_seats || 0), 0)
-  const totalConsumed = apps.reduce((s, a) => s + (a.detected_users || 0), 0)
+  const sources = [...new Set(apps.map(a => a.source))].sort()
+  const categories = [...new Set(apps.map(a => a.category))].sort()
+
+  const filtered = apps.filter(a => {
+    if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !(a.sku || '').toLowerCase().includes(search.toLowerCase())) return false
+    if (sourceFilter && a.source !== sourceFilter) return false
+    if (categoryFilter && a.category !== categoryFilter) return false
+    return true
+  })
+
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+  const totalSeats = filtered.reduce((s, a) => s + (a.total_seats || 0), 0)
+  const totalConsumed = filtered.reduce((s, a) => s + (a.detected_users || 0), 0)
+
+  useEffect(() => { setPage(1) }, [search, sourceFilter, categoryFilter])
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-blue-600">{apps.length}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">License SKUs</p>
+          <p className="text-2xl font-bold text-blue-600">{filtered.length}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Discovered</p>
         </div>
         <div className="card p-4 text-center">
           <p className="text-2xl font-bold text-green-600">{totalSeats.toLocaleString()}</p>
@@ -49,16 +82,28 @@ function DiscoveredApps({ canManage }) {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Available Seats</p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-green-600">${apps.reduce((s, a) => s + (a.monthly_cost || 0), 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+          <p className="text-2xl font-bold text-green-600">${filtered.reduce((s, a) => s + (a.monthly_cost || 0), 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Monthly Spend</p>
         </div>
       </div>
 
-      <div className="card p-3 flex gap-3">
-        <div className="relative flex-1">
+      <div className="card p-3 flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
-          <input placeholder="Search license SKUs..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <input placeholder="Search apps, SKUs..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
+        {sources.length > 1 && (
+          <select className="input w-auto min-w-[140px]" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+            <option value="">All Sources</option>
+            {sources.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        {categories.length > 1 && (
+          <select className="input w-auto min-w-[140px]" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+            <option value="">All Categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
         <button onClick={load} className="btn-secondary"><RefreshCw size={15} /></button>
       </div>
 
@@ -67,8 +112,9 @@ function DiscoveredApps({ canManage }) {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th className="table-header">License / SKU</th>
+                <th className="table-header">App / SKU</th>
                 <th className="table-header">Source</th>
+                <th className="table-header">Category</th>
                 <th className="table-header">Consumed</th>
                 <th className="table-header">Total Seats</th>
                 <th className="table-header">$/User/Mo</th>
@@ -78,10 +124,10 @@ function DiscoveredApps({ canManage }) {
             </thead>
             <tbody>
               {loading
-                ? <tr><td colSpan={7} className="text-center py-10 text-gray-400">Loading from connected integrations...</td></tr>
-                : filtered.length === 0
-                  ? <tr><td colSpan={7} className="text-center py-10 text-gray-400">No license SKUs found. Connect an integration first.</td></tr>
-                  : filtered.map(a => {
+                ? <tr><td colSpan={8} className="text-center py-10 text-gray-400">Loading from connected integrations...</td></tr>
+                : paged.length === 0
+                  ? <tr><td colSpan={8} className="text-center py-10 text-gray-400">No apps found. Connect an integration and sync first.</td></tr>
+                  : paged.map(a => {
                     const pct = a.total_seats > 0 ? Math.round((a.detected_users / a.total_seats) * 100) : 0
                     const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-green-500'
                     return (
@@ -91,10 +137,11 @@ function DiscoveredApps({ canManage }) {
                           <p className="text-xs text-gray-400">{a.sku}</p>
                         </td>
                         <td className="table-cell"><Badge variant="info">{a.source}</Badge></td>
+                        <td className="table-cell"><Badge variant="default">{a.category}</Badge></td>
                         <td className="table-cell font-bold text-gray-900 dark:text-white">{a.detected_users.toLocaleString()}</td>
                         <td className="table-cell text-gray-600 dark:text-gray-400">{a.total_seats.toLocaleString()}</td>
                         <td className="table-cell text-gray-600 dark:text-gray-400">
-                          {a.price_per_user !== null ? `$${a.price_per_user.toFixed(2)}` : <span className="text-gray-400">Free</span>}
+                          {a.price_per_user !== null ? `$${a.price_per_user.toFixed(2)}` : <span className="text-gray-400">—</span>}
                         </td>
                         <td className="table-cell">
                           {a.monthly_cost !== null && a.monthly_cost > 0
@@ -116,6 +163,7 @@ function DiscoveredApps({ canManage }) {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={filtered.length} perPage={perPage} setPage={setPage} />
       </div>
     </div>
   )
@@ -127,6 +175,8 @@ function LicenseReclamation({ canManage }) {
   const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
   const perPage = 15
 
@@ -149,6 +199,17 @@ function LicenseReclamation({ canManage }) {
     setScanning(false)
   }
 
+  const filtered = items.filter(r => {
+    if (search && !r.user_name.toLowerCase().includes(search.toLowerCase()) && !r.user_email.toLowerCase().includes(search.toLowerCase())) return false
+    if (statusFilter && r.status !== statusFilter) return false
+    return true
+  })
+
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+
+  useEffect(() => { setPage(1) }, [search, statusFilter])
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -170,18 +231,24 @@ function LicenseReclamation({ canManage }) {
         </div>
       </div>
 
-      {canManage && (
-        <div className="flex justify-end">
-          <button onClick={handleScan} disabled={scanning} className="btn-primary">
-            <Zap size={16} />{scanning ? 'Scanning...' : 'Run Reclamation Scan'}
-          </button>
+      <div className="card p-3 flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
+          <input placeholder="Search users..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-      )}
+        <select className="input w-auto min-w-[130px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="in_review">In Review</option>
+          <option value="completed">Completed</option>
+        </select>
+        {canManage && (
+          <button onClick={handleScan} disabled={scanning} className="btn-primary">
+            <Zap size={16} />{scanning ? 'Scanning...' : 'Run Scan'}
+          </button>
+        )}
+      </div>
 
-      {(() => {
-        const totalPages = Math.ceil(items.length / perPage)
-        const paged = items.slice((page - 1) * perPage, page * perPage)
-        return (
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -243,21 +310,8 @@ function LicenseReclamation({ canManage }) {
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-500">Showing {(page-1)*perPage+1}-{Math.min(page*perPage, items.length)} of {items.length}</p>
-            <div className="flex gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Prev</button>
-              {Array.from({length: totalPages}, (_, i) => i+1).slice(Math.max(0, page-3), page+2).map(p => (
-                <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-xs rounded ${page===p ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{p}</button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Next</button>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} totalPages={totalPages} total={filtered.length} perPage={perPage} setPage={setPage} />
       </div>
-        )
-      })()}
     </div>
   )
 }
@@ -268,6 +322,9 @@ function CloudResources({ canManage }) {
   const [summary, setSummary] = useState([])
   const [loading, setLoading] = useState(true)
   const [provider, setProvider] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
   const [scanning, setScanning] = useState(false)
   const [page, setPage] = useState(1)
   const perPage = 15
@@ -287,8 +344,20 @@ function CloudResources({ canManage }) {
     setScanning(false)
   }
 
-  const totalPages = Math.ceil(resources.length / perPage)
-  const paged = resources.slice((page - 1) * perPage, page * perPage)
+  const types = [...new Set(resources.map(r => r.resource_type))].sort()
+  const statuses = [...new Set(resources.map(r => r.status))].sort()
+
+  const filtered = resources.filter(r => {
+    if (typeFilter && r.resource_type !== typeFilter) return false
+    if (statusFilter && r.status !== statusFilter) return false
+    if (search && !r.resource_name.toLowerCase().includes(search.toLowerCase()) && !(r.software_installed || '').toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+
+  useEffect(() => { setPage(1) }, [search, typeFilter, statusFilter, provider])
 
   return (
     <div className="space-y-4">
@@ -304,7 +373,7 @@ function CloudResources({ canManage }) {
             </p>
           </div>
         ))}
-        {summary.length > 0 && (
+        {summary.length > 1 && (
           <div className="card p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="font-semibold text-gray-900 dark:text-white">Total</p>
@@ -317,19 +386,35 @@ function CloudResources({ canManage }) {
         )}
       </div>
 
-      <div className="flex gap-3 justify-between flex-wrap">
+      <div className="card p-3 flex gap-3 flex-wrap">
         <div className="flex gap-2 flex-wrap">
-          {['', 'Microsoft'].map(p => (
+          {['', ...summary.map(s => s.provider)].map(p => (
             <button key={p} onClick={() => { setProvider(p); setPage(1) }}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${provider === p ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
               {p || 'All Providers'}
             </button>
           ))}
         </div>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
+          <input placeholder="Search resources..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {types.length > 1 && (
+          <select className="input w-auto min-w-[130px]" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <option value="">All Types</option>
+            {types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        {statuses.length > 1 && (
+          <select className="input w-auto min-w-[120px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">All Status</option>
+            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
         {canManage && (
           <button onClick={handleScan} disabled={scanning} className="btn-secondary text-sm">
             <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
-            {scanning ? 'Scanning...' : 'Scan Infrastructure'}
+            {scanning ? 'Scanning...' : 'Scan'}
           </button>
         )}
       </div>
@@ -342,8 +427,8 @@ function CloudResources({ canManage }) {
                 <th className="table-header">Resource</th>
                 <th className="table-header">Provider</th>
                 <th className="table-header">Type</th>
-                <th className="table-header">Consumed / Total</th>
-                <th className="table-header">$/User/Mo</th>
+                <th className="table-header">Region</th>
+                <th className="table-header">Details</th>
                 <th className="table-header">Monthly Cost</th>
                 <th className="table-header">Status</th>
                 <th className="table-header">Last Scanned</th>
@@ -362,11 +447,11 @@ function CloudResources({ canManage }) {
                       </td>
                       <td className="table-cell"><Badge variant="purple">{r.provider}</Badge></td>
                       <td className="table-cell"><Badge variant="info">{r.resource_type}</Badge></td>
-                      <td className="table-cell text-sm text-gray-900 dark:text-white font-medium">
-                        {r.consumed || 0} / {r.enabled || 0}
-                      </td>
-                      <td className="table-cell text-gray-600 dark:text-gray-400">
-                        {r.price_per_user > 0 ? `$${r.price_per_user.toFixed(2)}` : <span className="text-gray-400">Free</span>}
+                      <td className="table-cell text-xs text-gray-500">{r.region || 'Global'}</td>
+                      <td className="table-cell text-xs text-gray-600 dark:text-gray-400 max-w-[200px] truncate" title={r.software_installed}>
+                        {r.resource_type === 'SaaS License'
+                          ? `${r.consumed || 0} / ${r.enabled || 0} seats`
+                          : r.software_installed || '—'}
                       </td>
                       <td className="table-cell">
                         {r.monthly_cost > 0
@@ -382,18 +467,7 @@ function CloudResources({ canManage }) {
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-500">Showing {(page-1)*perPage+1}-{Math.min(page*perPage, resources.length)} of {resources.length}</p>
-            <div className="flex gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Prev</button>
-              {Array.from({length: totalPages}, (_, i) => i+1).slice(Math.max(0, page-3), page+2).map(p => (
-                <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-xs rounded ${page===p ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{p}</button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Next</button>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} totalPages={totalPages} total={filtered.length} perPage={perPage} setPage={setPage} />
       </div>
     </div>
   )
@@ -404,6 +478,9 @@ function ShadowIT({ canManage }) {
   const [apps, setApps] = useState([])
   const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [riskFilter, setRiskFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
   const [page, setPage] = useState(1)
   const perPage = 15
 
@@ -420,8 +497,19 @@ function ShadowIT({ canManage }) {
     load()
   }
 
-  const totalPages = Math.ceil(apps.length / perPage)
-  const paged = apps.slice((page - 1) * perPage, page * perPage)
+  const categories = [...new Set(apps.map(a => a.category))].sort()
+
+  const filtered = apps.filter(a => {
+    if (search && !a.app_name.toLowerCase().includes(search.toLowerCase()) && !(a.notes || '').toLowerCase().includes(search.toLowerCase())) return false
+    if (riskFilter && a.risk_level !== riskFilter) return false
+    if (categoryFilter && a.category !== categoryFilter) return false
+    return true
+  })
+
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+
+  useEffect(() => { setPage(1) }, [search, riskFilter, categoryFilter])
 
   return (
     <div className="space-y-4">
@@ -442,6 +530,25 @@ function ShadowIT({ canManage }) {
           <p className="text-2xl font-bold text-purple-600">${(summary.total_monthly_cost || 0).toLocaleString()}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Est. Monthly Spend</p>
         </div>
+      </div>
+
+      <div className="card p-3 flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
+          <input placeholder="Search shadow IT..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="input w-auto min-w-[120px]" value={riskFilter} onChange={e => setRiskFilter(e.target.value)}>
+          <option value="">All Risk</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        {categories.length > 1 && (
+          <select className="input w-auto min-w-[140px]" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+            <option value="">All Categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -502,18 +609,7 @@ function ShadowIT({ canManage }) {
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-500">Showing {(page-1)*perPage+1}-{Math.min(page*perPage, apps.length)} of {apps.length}</p>
-            <div className="flex gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Prev</button>
-              {Array.from({length: totalPages}, (_, i) => i+1).slice(Math.max(0, page-3), page+2).map(p => (
-                <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-xs rounded ${page===p ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{p}</button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 disabled:opacity-40">Next</button>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} totalPages={totalPages} total={filtered.length} perPage={perPage} setPage={setPage} />
       </div>
     </div>
   )
@@ -551,23 +647,26 @@ export default function CloudIntelligence() {
       {/* Top-level summary bar */}
       {summary && (
         <>
-          {summary.org_name && (
-            <div className="card p-3 flex items-center gap-2">
-              <span className="text-sm text-gray-500 dark:text-gray-400">Connected to:</span>
-              <span className="font-semibold text-gray-900 dark:text-white">{summary.org_name}</span>
-              <span className="text-xs text-gray-400">via Microsoft 365</span>
+          {(summary.org_name || summary.integrations_connected > 0) && (
+            <div className="card p-3 flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Connected:</span>
+              {summary.org_name && <span className="font-semibold text-gray-900 dark:text-white">{summary.org_name}</span>}
+              <span className="text-xs text-gray-400">
+                {summary.integrations_connected || 0} integration{(summary.integrations_connected || 0) !== 1 ? 's' : ''}
+                {summary.providers?.length > 0 && ` (${summary.providers.join(', ')})`}
+              </span>
             </div>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {[
-              { label: 'License SKUs', value: summary.discovered_apps, color: 'text-blue-600' },
+              { label: 'Discovered', value: summary.discovered_apps, color: 'text-blue-600' },
               { label: 'Total Users', value: (summary.total_users || 0).toLocaleString(), color: 'text-purple-600' },
               { label: 'Licensed Users', value: (summary.licensed_users || 0).toLocaleString(), color: 'text-green-600' },
               { label: 'Total Seats', value: (summary.total_license_seats || 0).toLocaleString(), color: 'text-blue-600' },
               { label: 'Seats Used', value: (summary.consumed_license_seats || 0).toLocaleString(), color: 'text-yellow-600' },
               { label: 'Unused Seats', value: (summary.unused_license_seats || 0).toLocaleString(), color: 'text-red-600' },
               { label: 'Monthly Spend', value: `$${(summary.cloud_monthly_cost || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}`, color: 'text-green-600' },
-              { label: 'Reclaim Candidates', value: summary.reclaim_candidates, color: 'text-orange-600' },
+              { label: 'Cloud Resources', value: summary.cloud_resources || 0, color: 'text-orange-600' },
             ].map(s => (
               <div key={s.label} className="card p-3 text-center">
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>

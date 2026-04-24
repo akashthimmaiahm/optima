@@ -266,6 +266,79 @@ async function main() {
     console.log(`🌐  Portal   : ${CENTRAL_URL}`);
     console.log(`💾  Database : ${process.env.OPTIMA_DB_PATH || './optima.db'}\n`);
   });
+
+  // ── WebSocket: persistent connection to central server for health status ────
+  if (centralProperty && process.env.PROPERTY_KEY) {
+    connectWebSocket(centralProperty, PROPERTY_SLUG);
+  }
+}
+
+function connectWebSocket(centralProperty, slug) {
+  let WebSocket;
+  try { WebSocket = require('ws'); } catch { console.log('  ws package not installed — skipping WebSocket'); return; }
+
+  const wsProto = CENTRAL_URL.startsWith('https') ? 'wss' : 'ws';
+  const host = CENTRAL_URL.replace(/^https?:\/\//, '');
+  const params = `role=property&property_id=${centralProperty.id}&slug=${encodeURIComponent(slug)}&ec2_url=${encodeURIComponent(`http://${process.env.EC2_PUBLIC_IP || 'localhost'}:${PORT}`)}`;
+  const wsUrl = `${wsProto}://${host}/ws?${params}`;
+
+  let ws = null;
+  let heartbeatInterval = null;
+  let reconnectTimeout = null;
+
+  function connect() {
+    try {
+      ws = new WebSocket(wsUrl, { rejectUnauthorized: false });
+    } catch (e) {
+      console.log(`  WS connection error: ${e.message}`);
+      scheduleReconnect();
+      return;
+    }
+
+    ws.on('open', () => {
+      console.log('  WS connected to central server');
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'heartbeat' }));
+        }
+      }, 15000);
+    });
+
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw);
+        if (msg.type === 'connected') {
+          console.log(`  WS acknowledged: property_id=${msg.property_id}`);
+        }
+      } catch {}
+    });
+
+    ws.on('close', () => {
+      cleanup();
+      scheduleReconnect();
+    });
+
+    ws.on('error', (err) => {
+      console.log(`  WS error: ${err.message}`);
+      cleanup();
+      scheduleReconnect();
+    });
+  }
+
+  function cleanup() {
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimeout) return;
+    reconnectTimeout = setTimeout(() => {
+      reconnectTimeout = null;
+      console.log('  WS reconnecting to central server...');
+      connect();
+    }, 5000);
+  }
+
+  connect();
 }
 
 main().catch(err => { console.error('Fatal:', err); process.exit(1); });
