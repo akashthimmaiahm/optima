@@ -158,22 +158,104 @@ router.get('/discovered-apps', authenticate, async (req, res) => {
           console.error(`M365 discovered-apps error: ${e.message}`);
         }
       } else if (integ.name === 'AWS IAM') {
-        // AWS IAM users as "discovered apps" — each IAM role/policy is a discoverable resource
-        const iamPolicies = sd.iam_policies || [];
-        for (const p of iamPolicies) {
+        // EC2 instances as discovered services
+        const ec2Instances = sd.ec2_instances || [];
+        if (ec2Instances.length > 0) {
+          id++;
+          const runningCount = ec2Instances.filter(i => i.state === 'running').length;
+          const ec2Cost = ec2Instances.reduce((sum, i) => {
+            if (i.state === 'running') return sum + (EC2_MONTHLY_COST[i.type] || EC2_MONTHLY_COST[i.instance_type] || 50);
+            return sum;
+          }, 0);
+          data.push({
+            id,
+            name: 'Amazon EC2',
+            sku: `${ec2Instances.length} instances (${runningCount} running)`,
+            category: 'IaaS',
+            source: 'AWS',
+            url: 'https://console.aws.amazon.com/ec2',
+            detected_users: runningCount,
+            total_seats: ec2Instances.length,
+            price_per_user: ec2Instances.length > 0 ? Math.round(ec2Cost / Math.max(runningCount, 1)) : 0,
+            monthly_cost: ec2Cost,
+            total_cost: ec2Cost,
+            is_sanctioned: 1,
+          });
+        }
+        // S3 buckets as discovered service
+        const s3Buckets = sd.s3_buckets || [];
+        if (s3Buckets.length > 0) {
+          id++;
+          const s3Cost = s3Buckets.length * S3_MONTHLY_ESTIMATE;
+          data.push({
+            id,
+            name: 'Amazon S3',
+            sku: `${s3Buckets.length} buckets`,
+            category: 'Storage',
+            source: 'AWS',
+            url: 'https://console.aws.amazon.com/s3',
+            detected_users: s3Buckets.length,
+            total_seats: s3Buckets.length,
+            price_per_user: S3_MONTHLY_ESTIMATE,
+            monthly_cost: s3Cost,
+            total_cost: s3Cost,
+            is_sanctioned: 1,
+          });
+        }
+        // IAM Users as discovered service
+        const iamUsers = sd.iam_users || [];
+        if (iamUsers.length > 0) {
           id++;
           data.push({
             id,
-            name: p.name,
-            sku: p.arn || 'IAM Policy',
-            category: 'IAM Policy',
-            source: 'AWS IAM',
+            name: 'AWS IAM Users',
+            sku: `${iamUsers.length} users`,
+            category: 'Identity',
+            source: 'AWS',
             url: 'https://console.aws.amazon.com/iam',
-            detected_users: p.attachments || 0,
-            total_seats: p.attachments || 0,
-            price_per_user: null,
-            monthly_cost: null,
-            total_cost: null,
+            detected_users: iamUsers.length,
+            total_seats: iamUsers.length,
+            price_per_user: 0,
+            monthly_cost: 0,
+            total_cost: 0,
+            is_sanctioned: 1,
+          });
+        }
+        // IAM Roles as discovered service
+        const iamRoles = sd.iam_roles || [];
+        if (iamRoles.length > 0) {
+          id++;
+          data.push({
+            id,
+            name: 'AWS IAM Roles',
+            sku: `${iamRoles.length} roles`,
+            category: 'Identity',
+            source: 'AWS',
+            url: 'https://console.aws.amazon.com/iam',
+            detected_users: iamRoles.length,
+            total_seats: iamRoles.length,
+            price_per_user: 0,
+            monthly_cost: 0,
+            total_cost: 0,
+            is_sanctioned: 1,
+          });
+        }
+        // IAM Policies
+        const iamPolicies = sd.iam_policies || [];
+        if (iamPolicies.length > 0) {
+          id++;
+          data.push({
+            id,
+            name: 'AWS IAM Policies',
+            sku: `${iamPolicies.length} policies`,
+            category: 'IAM Policy',
+            source: 'AWS',
+            url: 'https://console.aws.amazon.com/iam',
+            detected_users: iamPolicies.reduce((s, p) => s + (p.attachments || 0), 0),
+            total_seats: iamPolicies.length,
+            price_per_user: 0,
+            monthly_cost: 0,
+            total_cost: 0,
             is_sanctioned: 1,
           });
         }

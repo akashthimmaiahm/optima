@@ -217,7 +217,7 @@ export default function Dashboard() {
               { label: 'Hardware Value',   value: `$${((c.hardwareTotal || 0) / 1000).toFixed(0)}K`,              sub: 'total assets',    color: 'text-orange-400', bg: 'bg-orange-900/20' },
               { label: 'Wasted Licenses',  value: `$${(c.wastedLicenseCost || 0).toLocaleString()}`,             sub: 'underutilized',   color: 'text-red-400',    bg: 'bg-red-900/20' },
               { label: 'Potential Savings',value: `$${(c.potentialSavings || 0).toLocaleString()}`,              sub: 'can be saved',    color: 'text-green-400',  bg: 'bg-green-900/20' },
-              { label: 'Shadow IT Cost',   value: `$${(c.shadowCost || 0).toLocaleString()}`,                    sub: 'unmanaged apps',  color: 'text-yellow-400', bg: 'bg-yellow-900/20' },
+              { label: 'Shadow IT Cost',   value: `$${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toLocaleString()}`, sub: `${stats?.shadowIT?.count || 0} risks detected`, color: 'text-yellow-400', bg: 'bg-yellow-900/20' },
             ].map(k => (
               <div key={k.label} className={`rounded-xl p-4 ${k.bg}`}>
                 <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
@@ -240,7 +240,7 @@ export default function Dashboard() {
                 {[
                   { label: 'Reclaim unused licenses',    value: `Save $${(c.reclaimPotential || 0).toFixed(0)}/mo`,        color: 'text-green-400',  icon: TrendingDown, action: () => navigate('/cloud-intelligence') },
                   { label: 'Review underutilized apps',  value: `${(c.wastedLicenses || []).length} apps`,                  color: 'text-yellow-400', icon: Target,       action: () => navigate('/licenses') },
-                  { label: 'Resolve Shadow IT',          value: `$${(c.shadowCost || 0).toFixed(0)}/mo exposure`,           color: 'text-red-400',    icon: ShieldAlert,  action: () => navigate('/cloud-intelligence') },
+                  { label: 'Resolve Shadow IT',          value: `${stats?.shadowIT?.count || 0} risks — $${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toFixed(0)}/mo`, color: 'text-red-400', icon: ShieldAlert, action: () => navigate('/cloud-intelligence') },
                   { label: 'Renew expiring contracts',   value: `${stats?.expiringContracts || 0} contracts`,              color: 'text-orange-400', icon: AlertTriangle,action: () => navigate('/contracts') },
                 ].map(w => (
                   <button key={w.label} onClick={w.action} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#22222e] transition-colors text-left">

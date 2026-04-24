@@ -104,11 +104,50 @@ router.get('/stats', authenticate, (req, res) => {
     reclaimPotential = rs.potential || 0;
   } catch (e) {}
 
-  // Shadow IT unsanctioned cost
+  // Shadow IT — compute from connected integrations
   let shadowCost = 0;
+  let shadowITCount = 0;
+  let shadowITHighRisk = 0;
+  let disabledUsersWithLicenses = 0;
+  let iamUsersWithoutMFA = 0;
   try {
-    shadowCost = db.prepare("SELECT SUM(monthly_cost_estimate) as total FROM shadow_it WHERE status != 'resolved'").get().total || 0;
-  } catch (e) {}
+    // First try local DB table
+    const localShadow = db.prepare("SELECT SUM(monthly_cost_estimate) as total, COUNT(*) as cnt FROM shadow_it WHERE status != 'resolved'").get();
+    shadowCost = localShadow.total || 0;
+    shadowITCount = localShadow.cnt || 0;
+  } catch (e) {
+    // No local table — compute from integration sync_details
+    try {
+      const integrations = db.prepare("SELECT * FROM cloud_integrations WHERE status='connected'").all();
+      for (const integ of integrations) {
+        let config = {};
+        try { config = typeof integ.config === 'string' ? JSON.parse(integ.config) : (integ.config || {}); } catch {}
+        const sd = config.sync_details || {};
+        const providerName = integ.name || integ.provider || '';
+
+        if (providerName.includes('Microsoft') || providerName.includes('M365') || providerName.includes('365')) {
+          // Disabled users with licenses = shadow IT risk
+          const totalUsers = sd.total_users || 0;
+          const enabledUsers = sd.enabled_users || 0;
+          disabledUsersWithLicenses = totalUsers - enabledUsers;
+          if (disabledUsersWithLicenses > 0) {
+            shadowITCount += disabledUsersWithLicenses;
+            shadowCost += disabledUsersWithLicenses * 12.50;
+          }
+        }
+        if (providerName.includes('AWS') || providerName.includes('Amazon')) {
+          const iamUsers = sd.iam_users || [];
+          for (const u of iamUsers) {
+            if (!u.mfa_enabled) {
+              iamUsersWithoutMFA++;
+              shadowITCount++;
+              if ((u.access_keys || 0) > 1) shadowITHighRisk++;
+            }
+          }
+        }
+      }
+    } catch (e2) {}
+  }
 
   // Top 5 costliest software
   const topSoftwareCost = db.prepare(`
@@ -180,6 +219,14 @@ router.get('/stats', authenticate, (req, res) => {
       providers: cloudProviders,
       resources: cloudResources,
       totalCloudCost: cloudCost,
+    },
+    // Shadow IT / security risk details
+    shadowIT: {
+      count: shadowITCount,
+      highRisk: shadowITHighRisk,
+      disabledUsersWithLicenses,
+      iamUsersWithoutMFA,
+      monthlyCost: shadowCost,
     },
   });
 });
