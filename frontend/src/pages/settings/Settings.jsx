@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { Shield, Sun, RefreshCw, CheckCircle, AlertCircle, Download, Loader2, Zap, Bug, Rocket } from 'lucide-react'
+import { Shield, Sun, RefreshCw, CheckCircle, AlertCircle, Download, Loader2, Zap, Bug, Rocket, HardDrive, Upload, Trash2, Clock, Lock, Save } from 'lucide-react'
 import Badge from '../../components/common/Badge'
 import api from '../../api/axios'
 
@@ -183,6 +183,238 @@ function UpdateChecker() {
   )
 }
 
+function BackupRestore() {
+  const { hasRole } = useAuth()
+  const canManage = hasRole('super_admin', 'it_admin')
+  const fileInputRef = useRef(null)
+
+  const [settings, setSettings] = useState(null)
+  const [backups, setBackups] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [form, setForm] = useState({ auto_enabled: false, interval_hours: 24, retention_days: 30, passphrase: '' })
+  const [restorePassphrase, setRestorePassphrase] = useState('')
+  const [showPassphrase, setShowPassphrase] = useState(false)
+
+  const loadSettings = async () => {
+    try {
+      const res = await api.get('/backup/settings')
+      setSettings(res.data)
+      setBackups(res.data.backups || [])
+      setForm(f => ({
+        ...f,
+        auto_enabled: res.data.auto_enabled,
+        interval_hours: res.data.interval_hours,
+        retention_days: res.data.retention_days,
+      }))
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to load backup settings' })
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadSettings() }, [])
+
+  const saveSettings = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const payload = { auto_enabled: form.auto_enabled, interval_hours: form.interval_hours, retention_days: form.retention_days }
+      if (form.passphrase) payload.passphrase = form.passphrase
+      await api.put('/backup/settings', payload)
+      setMessage({ type: 'success', text: 'Backup settings saved' })
+      setForm(f => ({ ...f, passphrase: '' }))
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save settings' })
+    }
+    setSaving(false)
+  }
+
+  const createBackup = async () => {
+    setCreating(true)
+    setMessage(null)
+    try {
+      const res = await api.post('/backup/create', {})
+      setMessage({ type: 'success', text: `Backup created: ${res.data.filename} (${res.data.size_mb} MB)` })
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Backup failed' })
+    }
+    setCreating(false)
+  }
+
+  const downloadBackup = (filename) => {
+    window.open(`${api.defaults.baseURL}/backup/download/${filename}`, '_blank')
+  }
+
+  const deleteBackup = async (filename) => {
+    if (!confirm(`Delete backup ${filename}?`)) return
+    try {
+      await api.delete(`/backup/${filename}`)
+      setMessage({ type: 'success', text: 'Backup deleted' })
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Delete failed' })
+    }
+  }
+
+  const handleRestore = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!restorePassphrase) {
+      setMessage({ type: 'error', text: 'Enter the decryption passphrase before restoring' })
+      fileInputRef.current.value = ''
+      return
+    }
+    if (!confirm('WARNING: This will replace ALL current data with the backup. This action cannot be undone. Continue?')) {
+      fileInputRef.current.value = ''
+      return
+    }
+    setRestoring(true)
+    setMessage(null)
+    try {
+      const buffer = await file.arrayBuffer()
+      const res = await api.post('/backup/restore', buffer, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Backup-Passphrase': restorePassphrase,
+        },
+        maxBodyLength: 500 * 1024 * 1024,
+      })
+      setMessage({ type: 'success', text: res.data.message })
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Restore failed' })
+    }
+    setRestoring(false)
+    fileInputRef.current.value = ''
+  }
+
+  const fmtSize = (bytes) => bytes > 1048576 ? (bytes / 1048576).toFixed(2) + ' MB' : (bytes / 1024).toFixed(1) + ' KB'
+  const fmtDate = (d) => d ? new Date(d).toLocaleString() : 'Never'
+
+  if (!canManage) return null
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <HardDrive size={20} className="text-green-500" /> Backup & Restore
+        </h2>
+        <button onClick={createBackup} disabled={creating} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+          {creating ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+          {creating ? 'Creating…' : 'Backup Now'}
+        </button>
+      </div>
+
+      {message && (
+        <div className={`flex items-start gap-3 p-3 rounded-xl mb-4 ${message.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/30' : 'bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30'}`}>
+          {message.type === 'success' ? <CheckCircle size={16} className="text-green-500 mt-0.5" /> : <AlertCircle size={16} className="text-red-500 mt-0.5" />}
+          <p className={`text-sm ${message.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{message.text}</p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+      ) : (
+        <div className="space-y-5">
+          {/* Auto-backup settings */}
+          <div className="p-4 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2"><Clock size={15} className="text-blue-500" /> Automatic Backup</p>
+                <p className="text-xs text-gray-500 mt-0.5">Encrypted backups run automatically on schedule</p>
+              </div>
+              <button onClick={() => setForm(f => ({ ...f, auto_enabled: !f.auto_enabled }))} className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${form.auto_enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${form.auto_enabled ? 'translate-x-8' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label">Interval (hours)</label>
+                <input type="number" min="1" max="168" className="input" value={form.interval_hours} onChange={e => setForm(f => ({ ...f, interval_hours: +e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Retention (days)</label>
+                <input type="number" min="1" max="365" className="input" value={form.retention_days} onChange={e => setForm(f => ({ ...f, retention_days: +e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Encryption Passphrase</label>
+                <div className="relative">
+                  <input type={showPassphrase ? 'text' : 'password'} className="input pr-16" placeholder="Change passphrase…" value={form.passphrase} onChange={e => setForm(f => ({ ...f, passphrase: e.target.value }))} />
+                  <button type="button" onClick={() => setShowPassphrase(s => !s)} className="absolute right-2 top-2 text-xs text-blue-500 hover:text-blue-700">{showPassphrase ? 'Hide' : 'Show'}</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                {settings?.last_backup_at ? <>Last backup: <span className="font-medium text-gray-700 dark:text-gray-300">{fmtDate(settings.last_backup_at)}</span></> : 'No backups yet'}
+              </p>
+              <button onClick={saveSettings} disabled={saving} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                Save Settings
+              </button>
+            </div>
+          </div>
+
+          {/* Restore section */}
+          <div className="p-4 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl">
+            <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2 mb-3"><Upload size={15} className="text-orange-500" /> Restore from Backup</p>
+            <p className="text-xs text-gray-500 mb-3">Upload an encrypted <code>.enc</code> backup file. The database will be replaced and the server will restart.</p>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="label">Decryption Passphrase</label>
+                <div className="relative">
+                  <Lock size={14} className="absolute left-3 top-2.5 text-gray-400" />
+                  <input type="password" className="input pl-9" placeholder="Enter passphrase used during backup" value={restorePassphrase} onChange={e => setRestorePassphrase(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <input ref={fileInputRef} type="file" accept=".enc" onChange={handleRestore} className="hidden" />
+                <button onClick={() => fileInputRef.current?.click()} disabled={restoring || !restorePassphrase} className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+                  {restoring ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                  {restoring ? 'Restoring…' : 'Upload & Restore'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Backup list */}
+          {backups.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Backup History ({backups.length})</p>
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {backups.map(b => (
+                  <div key={b.name} className="flex items-center gap-3 p-2.5 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] rounded-lg">
+                    <HardDrive size={14} className="text-gray-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate">{b.name}</p>
+                      <p className="text-[10px] text-gray-500">{fmtDate(b.created)} — {fmtSize(b.size)}</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => downloadBackup(b.name)} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-blue-500 transition-colors" title="Download"><Download size={13} /></button>
+                      <button onClick={() => deleteBackup(b.name)} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400 dark:text-gray-600">
+            Backups are AES-256-GCM encrypted with PBKDF2 key derivation. Files are stored on the server in <code>/backups</code>. Download and store offsite for disaster recovery.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Settings() {
   const { user } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -211,6 +443,9 @@ export default function Settings() {
 
       {/* Check for Updates */}
       <UpdateChecker />
+
+      {/* Backup & Restore */}
+      <BackupRestore />
 
       <div className="card p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">

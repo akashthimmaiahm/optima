@@ -246,6 +246,7 @@ async function main() {
   app.use('/api/ai-intelligence',    require('./routes/ai_intelligence'));
   app.use('/api/agent',              require('./routes/agent'));
   app.use('/api/update',             require('./routes/update'));
+  app.use('/api/backup',             require('./routes/backup'));
 
   const CLIENT_VERSION = '7.1.2';
 
