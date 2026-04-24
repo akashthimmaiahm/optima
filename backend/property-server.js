@@ -80,11 +80,52 @@ function saveEnvVar(key, value) {
   fs.writeFileSync(ENV_FILE, content);
 }
 
+// ── Detect real public IP (EC2 IMDSv2 or env var fallback) ───────────────────
+
+async function getPublicIP() {
+  // Allow manual override via env var (useful for non-EC2 or local installs)
+  if (process.env.EC2_PUBLIC_IP) return process.env.EC2_PUBLIC_IP;
+
+  // Try EC2 IMDSv2: first get token, then use it to fetch public IPv4
+  return new Promise((resolve) => {
+    const tokenReq = http.request({
+      hostname: '169.254.169.254',
+      path:     '/latest/api/token',
+      method:   'PUT',
+      headers:  { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' },
+      timeout:  2000,
+    }, (res) => {
+      let token = '';
+      res.on('data', c => token += c);
+      res.on('end', () => {
+        const ipReq = http.request({
+          hostname: '169.254.169.254',
+          path:     '/latest/meta-data/public-ipv4',
+          method:   'GET',
+          headers:  { 'X-aws-ec2-metadata-token': token.trim() },
+          timeout:  2000,
+        }, (r) => {
+          let ip = '';
+          r.on('data', c => ip += c);
+          r.on('end', () => resolve(ip.trim() || null));
+        });
+        ipReq.on('error', () => resolve(null));
+        ipReq.on('timeout', () => { ipReq.destroy(); resolve(null); });
+        ipReq.end();
+      });
+    });
+    tokenReq.on('error', () => resolve(null));
+    tokenReq.on('timeout', () => { tokenReq.destroy(); resolve(null); });
+    tokenReq.end();
+  });
+}
+
 // ── Setup: verify property key with central server ────────────────────────────
 
 async function setupWithKey(key) {
-  // Detect this server's outbound IP to register as ec2_url
-  const ec2_url = `http://0.0.0.0:${PORT}`;
+  const publicIp = await getPublicIP();
+  const ec2_url  = publicIp ? `http://${publicIp}:${PORT}` : null;
+  if (publicIp) console.log(`  Public IP detected: ${publicIp}`);
   const result  = await postJson(`${CENTRAL_URL}/api/portal/verify-key`, { property_key: key, ec2_url });
   return result.property;   // { id, name, slug, domain, plan, status }
 }
