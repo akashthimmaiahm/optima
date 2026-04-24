@@ -148,6 +148,12 @@ async function main() {
     PROPERTY_SLUG   = centralProperty.slug;
   }
 
+  // Expose verified name/slug to initDatabase so property record is correct
+  if (centralProperty) {
+    process.env.PROPERTY_NAME = centralProperty.name;
+    process.env.PROPERTY_SLUG = centralProperty.slug;
+  }
+
   // Boot local database
   initDatabase();
   const db = getDb();

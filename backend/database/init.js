@@ -344,19 +344,32 @@ function initDatabase() {
   try { db.exec("ALTER TABLE hardware_assets ADD COLUMN warranty_type TEXT DEFAULT 'standard'") } catch(e) {}
   try { db.exec("ALTER TABLE software_assets ADD COLUMN ai_platform INTEGER DEFAULT 0") } catch(e) {}
 
-  // Seed data
+  // Production: only seed property record + admin login. No dummy data.
+  // Development (NODE_ENV !== 'production'): seed full sample data for testing.
   seedDefaultProperty(db);
-  seedData(db);
-  seedAILicenses(db);
-  seedMDMDevices(db);
+  if (process.env.NODE_ENV !== 'production') {
+    seedData(db);
+    seedAILicenses(db);
+    seedMDMDevices(db);
+  } else {
+    seedProductionUsers(db);
+  }
   console.log('✅ Database initialized successfully');
 }
 
 function seedDefaultProperty(db) {
   const existing = db.prepare('SELECT COUNT(*) as c FROM properties').get();
   if (existing.c === 0) {
-    db.prepare(`INSERT INTO properties (id, name, slug, domain, plan, status, admin_email, max_assets) VALUES (1, 'Headquarters', 'headquarters', 'hq.optima.local', 'enterprise', 'active', 'admin@optima.com', 10000)`).run();
-    console.log('✅ Default property seeded');
+    // Use real name/slug from env if provided by key verification, else use placeholder
+    const name = process.env.PROPERTY_NAME || 'My Property';
+    const slug = process.env.PROPERTY_SLUG || 'my-property';
+    db.prepare(`INSERT INTO properties (id, name, slug, plan, status, max_assets) VALUES (1, ?, ?, 'enterprise', 'active', 10000)`).run(name, slug);
+    console.log(`✅ Property record created: "${name}"`);
+  } else if (process.env.PROPERTY_NAME) {
+    // Update name/slug if central server provided fresh values
+    db.prepare(`UPDATE properties SET name=?, slug=?, updated_at=datetime('now') WHERE id=1`).run(
+      process.env.PROPERTY_NAME, process.env.PROPERTY_SLUG || 'my-property'
+    );
   }
   // Always backfill property_id=1 for rows without one (idempotent)
   db.prepare("UPDATE software_assets SET property_id=1 WHERE property_id IS NULL").run();
@@ -525,6 +538,16 @@ function seedData(db) {
   contractsData.forEach(c => insertContract.run(...c));
 
   console.log('✅ Sample data seeded successfully');
+}
+
+// Minimal seed for production: just the super_admin login so the property is usable
+function seedProductionUsers(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM users').get();
+  if (existing.c > 0) return;
+  const hash = bcrypt.hashSync('Admin@123', 10);
+  db.prepare(`INSERT INTO users (name, email, password, role, department) VALUES (?, ?, ?, 'super_admin', 'IT')`)
+    .run('Admin', 'admin@optima.com', hash);
+  console.log('✅ Default admin user created (admin@optima.com / Admin@123) — change password after first login');
 }
 
 module.exports = { getDb, initDatabase };
