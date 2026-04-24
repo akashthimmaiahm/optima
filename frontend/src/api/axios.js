@@ -1,7 +1,13 @@
 import axios from 'axios'
 
+// In Electron builds VITE_API_URL=https://optima.sclera.com is injected at build time.
+// In web (dev/prod) it falls back to the relative /api path.
+const BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: BASE,
   headers: { 'Content-Type': 'application/json' },
 })
 
