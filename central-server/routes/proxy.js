@@ -4,19 +4,17 @@
  * ALL requests to /api/* (except /api/auth and /api/portal) are proxied
  * to the selected property's EC2 instance.
  *
- * The frontend sends: X-Property-Id: <property_id>
- * This middleware looks up the ec2_url for that property and forwards the request.
- *
- * The same JWT issued at login is forwarded as-is — since the central server
- * and property EC2s share the same JWT_SECRET, it validates on both ends.
+ * Uses manual http forwarding instead of http-proxy-middleware to handle
+ * the case where express.json() has already consumed the request body.
  */
 
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const http = require('http');
+const https = require('https');
 const { getDb } = require('../database/init');
 const { JWT_SECRET } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 
-// Cache property → ec2_url lookups for 60 seconds to avoid DB hit on every request
+// Cache property → ec2_url lookups for 60 seconds
 const cache = new Map();
 const CACHE_TTL = 60_000;
 
@@ -31,11 +29,9 @@ function getPropertyUrl(propertyId) {
 }
 
 function resolvePropertyId(req) {
-  // 1. From header (preferred — set by frontend after property selection)
   const fromHeader = req.headers['x-property-id'];
   if (fromHeader) return parseInt(fromHeader);
 
-  // 2. From JWT payload (if user only has one property, auto-set on login)
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     try {
@@ -48,7 +44,7 @@ function resolvePropertyId(req) {
   return null;
 }
 
-function proxyMiddleware(req, res, next) {
+function proxyMiddleware(req, res) {
   const propertyId = resolvePropertyId(req);
 
   if (!propertyId) {
@@ -82,29 +78,70 @@ function proxyMiddleware(req, res, next) {
     });
   }
 
-  // Stamp the request so the property EC2 knows it came from the portal
-  req.headers['x-from-portal'] = 'true';
-  req.headers['x-portal-property-id'] = String(propertyId);
+  // Build the upstream URL
+  // Express strips the /api mount prefix, so req.url is e.g. /dashboard/stats
+  const upstreamUrl = new URL('/api' + req.url, target);
+  const isHttps = upstreamUrl.protocol === 'https:';
+  const transport = isHttps ? https : http;
 
-  // Dynamic proxy to the resolved target.
-  // NOTE: Express strips the /api mount prefix before this middleware runs,
-  // so req.url is e.g. /dashboard/stats — we must prepend /api back.
-  return createProxyMiddleware({
-    target,
-    changeOrigin: true,
-    logLevel: 'warn',
-    pathRewrite: (path) => '/api' + path,
-    on: {
-      error: (err, req, res) => {
-        cache.delete(propertyId); // clear stale cache on error
-        res.status(502).json({
-          error: 'property_unreachable',
-          message: `Could not connect to property server. It may be starting up.`,
-          detail: err.message,
-        });
-      },
-    },
-  })(req, res, next);
+  // Re-serialize body if express.json() already parsed it
+  let bodyBuffer = null;
+  if (req.body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    bodyBuffer = Buffer.from(JSON.stringify(req.body));
+  }
+
+  // Build forwarded headers (strip host, add portal stamps)
+  const fwdHeaders = { ...req.headers };
+  delete fwdHeaders.host;
+  fwdHeaders['x-from-portal'] = 'true';
+  fwdHeaders['x-portal-property-id'] = String(propertyId);
+  if (bodyBuffer) {
+    fwdHeaders['content-type'] = 'application/json';
+    fwdHeaders['content-length'] = String(bodyBuffer.length);
+  }
+
+  const proxyReq = transport.request({
+    hostname: upstreamUrl.hostname,
+    port:     upstreamUrl.port || (isHttps ? 443 : 80),
+    path:     upstreamUrl.pathname + upstreamUrl.search,
+    method:   req.method,
+    headers:  fwdHeaders,
+    timeout:  30000,
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    cache.delete(propertyId);
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: 'property_unreachable',
+        message: 'Could not connect to property server. It may be starting up.',
+        detail: err.message,
+      });
+    }
+  });
+
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy();
+    cache.delete(propertyId);
+    if (!res.headersSent) {
+      res.status(504).json({
+        error: 'property_timeout',
+        message: 'Property server did not respond in time.',
+      });
+    }
+  });
+
+  if (bodyBuffer) {
+    proxyReq.end(bodyBuffer);
+  } else if (req.method === 'GET' || req.method === 'HEAD') {
+    proxyReq.end();
+  } else {
+    // For non-parsed bodies (e.g. file uploads), pipe the raw stream
+    req.pipe(proxyReq);
+  }
 }
 
 module.exports = { proxyMiddleware };
