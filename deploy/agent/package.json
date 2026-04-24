@@ -1,0 +1,13 @@
+{
+  "name": "optima-agent",
+  "version": "1.0.0",
+  "description": "Optima HAM/SAM monitoring agent",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "once": "node agent.js --once"
+  },
+  "dependencies": {
+    "systeminformation": "^5.22.0"
+  }
+}
