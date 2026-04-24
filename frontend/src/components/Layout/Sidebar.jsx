@@ -22,7 +22,6 @@ const navItems = [
   { to: '/contracts', icon: FileText, label: 'Contracts' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
   { to: '/procurement', icon: ShoppingCart, label: 'Procurement', adminOnly: true },
-  { to: '/users', icon: Users, label: 'User Management', adminOnly: true },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 

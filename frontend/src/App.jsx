@@ -10,7 +10,7 @@ import HardwareAssets from './pages/hardware/HardwareAssets'
 import LicenseManagement from './pages/licenses/LicenseManagement'
 import CloudIntegrations from './pages/integrations/CloudIntegrations'
 import CloudIntelligence from './pages/integrations/CloudIntelligence'
-import UserManagement from './pages/users/UserManagement'
+// User management is handled at the central server level
 import Vendors from './pages/vendors/Vendors'
 import Contracts from './pages/contracts/Contracts'
 import Reports from './pages/reports/Reports'
@@ -62,7 +62,7 @@ function AppRoutes() {
         <Route path="licenses"           element={<LicenseManagement />} />
         <Route path="integrations"       element={<CloudIntegrations />} />
         <Route path="cloud-intelligence" element={<CloudIntelligence />} />
-        <Route path="users"              element={<UserManagement />} />
+        {/* User management is at portal/server level */}
         <Route path="vendors"            element={<Vendors />} />
         <Route path="contracts"          element={<Contracts />} />
         <Route path="cmdb"               element={<CMDB />} />

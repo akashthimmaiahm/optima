@@ -29,15 +29,16 @@ router.get('/:platform/install', (req, res) => {
 
   if (platform === 'windows') {
     const script = generateWindowsScript(propertyKey, serverUrl);
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="optima-agent-install.ps1"');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="optima-agent-install.exe"');
     return res.send(script);
   }
 
   if (platform === 'linux' || platform === 'mac') {
     const script = generateUnixScript(propertyKey, serverUrl);
-    res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="optima-agent-install.sh"');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    const fname = platform === 'linux' ? 'optima-agent-install-linux.exe' : 'optima-agent-install-macos.exe';
+    res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
     return res.send(script);
   }
 

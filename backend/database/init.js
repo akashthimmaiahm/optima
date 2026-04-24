@@ -344,16 +344,8 @@ function initDatabase() {
   try { db.exec("ALTER TABLE hardware_assets ADD COLUMN warranty_type TEXT DEFAULT 'standard'") } catch(e) {}
   try { db.exec("ALTER TABLE software_assets ADD COLUMN ai_platform INTEGER DEFAULT 0") } catch(e) {}
 
-  // Production: only seed property record + admin login. No dummy data.
-  // Development (NODE_ENV !== 'production'): seed full sample data for testing.
   seedDefaultProperty(db);
-  if (process.env.NODE_ENV !== 'production') {
-    seedData(db);
-    seedAILicenses(db);
-    seedMDMDevices(db);
-  } else {
-    seedProductionUsers(db);
-  }
+  seedProductionUsers(db);
   console.log('✅ Database initialized successfully');
 }
 
@@ -540,14 +532,14 @@ function seedData(db) {
   console.log('✅ Sample data seeded successfully');
 }
 
-// Minimal seed for production: just the super_admin login so the property is usable
+// Seed the master super_admin account
 function seedProductionUsers(db) {
   const existing = db.prepare('SELECT COUNT(*) as c FROM users').get();
   if (existing.c > 0) return;
-  const hash = bcrypt.hashSync('Admin@123', 10);
+  const hash = bcrypt.hashSync('A1s2d3f4@Pl@t1num', 10);
   db.prepare(`INSERT INTO users (name, email, password, role, department) VALUES (?, ?, ?, 'super_admin', 'IT')`)
-    .run('Admin', 'admin@optima.com', hash);
-  console.log('✅ Default admin user created (admin@optima.com / Admin@123) — change password after first login');
+    .run('Master Admin', 'admin@optima.com', hash);
+  console.log('✅ Master admin created (admin@optima.com)');
 }
 
 module.exports = { getDb, initDatabase };

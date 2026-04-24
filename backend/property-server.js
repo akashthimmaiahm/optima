@@ -233,7 +233,7 @@ async function main() {
   app.use('/api/hardware',           require('./routes/hardware'));
   app.use('/api/licenses',           require('./routes/licenses'));
   app.use('/api/integrations',       require('./routes/integrations'));
-  app.use('/api/users',              require('./routes/users'));
+  // User management is handled at the central portal level
   app.use('/api/vendors',            require('./routes/vendors'));
   app.use('/api/contracts',          require('./routes/contracts'));
   app.use('/api/reports',            require('./routes/reports'));

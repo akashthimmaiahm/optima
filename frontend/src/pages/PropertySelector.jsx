@@ -24,7 +24,7 @@ function slugToCode(slug = '') {
 // ── Agent Download Modal ──────────────────────────────────────────────────────
 function AgentDownloadModal({ prop, onClose }) {
   const [copied, setCopied] = useState(null)
-  const key = prop.property_key || '(key not generated yet)'
+  const key = prop.property_key || ''
   const slug = prop.slug
 
   const copyText = (text, id) => {
@@ -39,27 +39,27 @@ function AgentDownloadModal({ prop, onClose }) {
       label: 'Windows Agent',
       icon: Monitor,
       color: 'text-blue-500',
-      file: `optima-agent-${slug}-windows.ps1`,
+      file: `optima-agent-${slug}-windows.exe`,
       downloadUrl: `/api/agents/windows/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as Administrator in PowerShell:\npowershell -ExecutionPolicy Bypass -File optima-agent-${slug}-windows.ps1`,
+      install: `# Run as Administrator:\noptima-agent-${slug}-windows.exe`,
     },
     {
       id: 'linux',
       label: 'Linux Agent',
       icon: Terminal,
       color: 'text-green-500',
-      file: `optima-agent-${slug}-linux.sh`,
+      file: `optima-agent-${slug}-linux.exe`,
       downloadUrl: `/api/agents/linux/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nsudo bash optima-agent-${slug}-linux.sh`,
+      install: `# Run as root:\nsudo ./optima-agent-${slug}-linux.exe`,
     },
     {
       id: 'mac',
       label: 'macOS Agent',
       icon: Apple,
       color: 'text-gray-500 dark:text-gray-300',
-      file: `optima-agent-${slug}-macos.sh`,
+      file: `optima-agent-${slug}-macos.exe`,
       downloadUrl: `/api/agents/mac/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nsudo bash optima-agent-${slug}-macos.sh`,
+      install: `# Run as root:\nsudo ./optima-agent-${slug}-macos.exe`,
     },
   ]
 
@@ -77,15 +77,11 @@ function AgentDownloadModal({ prop, onClose }) {
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          {/* Property key */}
-          <div className="bg-gray-50 dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-xl p-3">
-            <p className="text-[10px] text-gray-500 mb-1.5 flex items-center gap-1"><Key size={10} /> Property Key (embedded in all agents)</p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs text-blue-500 dark:text-blue-400 font-mono bg-gray-100 dark:bg-black rounded px-2 py-1.5 truncate">{key}</code>
-              <button onClick={() => copyText(key, 'key')} className="flex-shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-1">
-                {copied === 'key' ? <CheckCheck size={13} className="text-green-500" /> : <Copy size={13} />}
-              </button>
-            </div>
+          {/* Property info — key is embedded, not shown */}
+          <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/30 rounded-xl p-3">
+            <p className="text-[10px] text-green-700 dark:text-green-400 flex items-center gap-1">
+              <CheckCheck size={10} /> Property key is securely embedded in the agent installer. No manual configuration needed.
+            </p>
           </div>
 
           {/* Agent downloads */}
@@ -95,6 +91,7 @@ function AgentDownloadModal({ prop, onClose }) {
                 <div className="flex items-center gap-2">
                   <agent.icon size={15} className={agent.color} />
                   <span className="text-xs font-semibold text-gray-900 dark:text-white">{agent.label}</span>
+                  <span className="text-[10px] text-gray-400 font-mono">.exe</span>
                 </div>
                 <a
                   href={agent.downloadUrl}
@@ -116,6 +113,7 @@ function AgentDownloadModal({ prop, onClose }) {
 
           <p className="text-[10px] text-gray-400 dark:text-gray-700">
             The agent discovers installed software, hardware specs, and reports them to this property's backend automatically.
+            The property key is pre-configured — just download and run.
           </p>
         </div>
       </div>

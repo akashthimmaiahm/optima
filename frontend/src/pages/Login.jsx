@@ -6,7 +6,7 @@ import logoUrl from '../assets/optima-logo.png'
 import { useTheme } from '../contexts/ThemeContext'
 
 export default function Login() {
-  const [form, setForm] = useState({ email: 'admin@optima.com', password: 'Admin@123' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,17 +37,9 @@ export default function Login() {
     setSsoLoading(provider)
     setTimeout(() => {
       setSsoLoading('')
-      setError(`${provider} SSO is configured for production. Use demo credentials below.`)
+      setError(`${provider} SSO integration is being configured. Contact your administrator.`)
     }, 1500)
   }
-
-  const accounts = [
-    { label: 'Super Admin', email: 'admin@optima.com', password: 'Admin@123', color: 'text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20' },
-    { label: 'IT Manager', email: 'manager@optima.com', password: 'Manager@123', color: 'text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20' },
-    { label: 'IT Admin', email: 'itadmin@optima.com', password: 'ITAdmin@123', color: 'text-green-600 dark:text-green-400 border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-900/20' },
-    { label: 'Auditor', email: 'auditor@optima.com', password: 'Audit@123', color: 'text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20' },
-    { label: 'End User', email: 'john@optima.com', password: 'User@123', color: 'text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40' },
-  ]
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0e0e12] flex">
@@ -186,24 +178,9 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-6">
-            <p className="text-xs text-gray-400 dark:text-gray-600 mb-2 font-medium uppercase tracking-wider">Demo Accounts</p>
-            <div className="space-y-1.5">
-              {accounts.map(acc => (
-                <button
-                  key={acc.email}
-                  onClick={() => setForm({ email: acc.email, password: acc.password })}
-                  className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${acc.color}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">{acc.label}</span>
-                    <span className="text-xs opacity-60 font-mono">{acc.password}</span>
-                  </div>
-                  <p className="text-xs opacity-50 mt-0.5">{acc.email}</p>
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-600 text-center mt-6">
+            Contact your administrator for access credentials.
+          </p>
         </div>
       </div>
     </div>

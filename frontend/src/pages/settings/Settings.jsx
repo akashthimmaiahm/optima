@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { Shield, Sun, Info, RefreshCw, CheckCircle, AlertCircle, Download, Loader2, Zap } from 'lucide-react'
+import { Shield, Sun, RefreshCw, CheckCircle, AlertCircle, Download, Loader2, Zap, Bug, Rocket } from 'lucide-react'
 import Badge from '../../components/common/Badge'
 import api from '../../api/axios'
 
@@ -240,22 +240,103 @@ export default function Settings() {
 
       <div className="card p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Info size={20} /> System Information
+          <Bug size={20} className="text-red-500" /> Bugs & Fixes
         </h2>
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            { label: 'Application', value: 'Optima' },
-            { label: 'Version', value: '7.1.2 Enterprise' },
-            { label: 'Database', value: 'SQLite (EBS/Local)' },
-            { label: 'Backend', value: 'Node.js + Express' },
-            { label: 'Frontend', value: 'React + Tailwind CSS' },
-            { label: 'Authentication', value: 'JWT + RBAC' },
-          ].map(i => (
-            <div key={i.label} className="flex justify-between py-2 border-b border-gray-200 dark:border-[#2a2a35]">
-              <span className="text-sm text-gray-500">{i.label}</span>
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{i.value}</span>
+        <p className="text-sm text-gray-500 mb-4">Release notes and bug fixes for Optima v{CURRENT_VERSION}</p>
+
+        <div className="space-y-4">
+          <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/30 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket size={15} className="text-green-600 dark:text-green-400" />
+              <span className="text-sm font-semibold text-green-700 dark:text-green-400">v7.1.2 — April 2026</span>
+              <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full">Current</span>
             </div>
-          ))}
+            <div className="space-y-2 mt-3">
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">New Features</p>
+              <ul className="space-y-1.5">
+                {[
+                  'Real-time Cloud Intelligence from connected Microsoft 365 integrations',
+                  'AI Intelligence anomaly detection with live M365 data analysis',
+                  'Cloud Integration catalog with 18+ supported applications',
+                  'Per-SKU pricing and cost analytics in Cloud Infrastructure',
+                  'Shadow IT detection for disabled accounts and external guests',
+                  'License Reclamation with inactive user identification',
+                  'Procurement management with approval workflow',
+                  'Agent-based hardware & software discovery (Windows/Linux/macOS)',
+                  'Hierarchical user management with property-based access control',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0 mt-1.5" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-2 mt-4">
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Bug Fixes</p>
+              <ul className="space-y-1.5">
+                {[
+                  'Fixed proxy body forwarding for POST/PUT requests through central server',
+                  'Fixed stale license counts showing after integration disconnect',
+                  'Fixed modal styling in light mode (white background, proper borders)',
+                  'Fixed build cache invalidation causing stale frontend bundles',
+                  'Fixed property server IP detection using EC2 IMDSv2 metadata',
+                  'Resolved MaxListenersExceeded warning on central proxy',
+                  'Fixed pagination overflow on large datasets in Cloud Intelligence tables',
+                  'Fixed SSO button error messaging for unconfigured providers',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <Bug size={10} className="text-red-400 flex-shrink-0 mt-1" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket size={15} className="text-gray-500" />
+              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">v7.1.0 — March 2026</span>
+            </div>
+            <ul className="space-y-1.5 mt-2">
+              {[
+                'Multi-property architecture with central portal',
+                'Dark mode and light mode theme support',
+                'CMDB with configuration item relationships',
+                'MDM device management and compliance tracking',
+                'Contract lifecycle management with renewal alerts',
+                'Vendor management with SLA tracking',
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="p-4 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket size={15} className="text-gray-500" />
+              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">v7.0.0 — February 2026</span>
+            </div>
+            <ul className="space-y-1.5 mt-2">
+              {[
+                'Initial release of Optima ITAM platform',
+                'Software and Hardware asset management',
+                'License tracking and compliance reporting',
+                'Role-based access control (5 roles)',
+                'Executive dashboard with real-time metrics',
+                'Reports and export functionality',
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </div>
