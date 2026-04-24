@@ -504,13 +504,30 @@ function IntegrationCard({ integration, canManage, onRefresh }) {
   const [syncing, setSyncing] = useState(false)
   const [configModal, setConfigModal] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [syncDetails, setSyncDetails] = useState(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const isConnected = integration.status === 'connected'
   const meta = providerMeta[integration.provider] || { emoji: '🔌', color: 'bg-gray-100' }
 
   const handleSync = async () => {
     setSyncing(true)
-    try { await api.post(`/integrations/${integration.id}/sync`); onRefresh() } catch {}
+    try {
+      const res = await api.post(`/integrations/${integration.id}/sync`)
+      if (res.data.sync_details) setSyncDetails(res.data.sync_details)
+      onRefresh()
+    } catch (err) {
+      alert(err.response?.data?.error || 'Sync failed')
+    }
     setSyncing(false)
+  }
+
+  const loadSyncDetails = async () => {
+    if (syncDetails) { setDetailsOpen(d => !d); return }
+    try {
+      const res = await api.get(`/integrations/${integration.id}/sync-details`)
+      setSyncDetails(res.data.sync_details)
+      setDetailsOpen(true)
+    } catch {}
   }
 
   const handleDisconnect = async () => {
@@ -552,24 +569,69 @@ function IntegrationCard({ integration, canManage, onRefresh }) {
         {isConnected && (
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2 text-center">
-              <p className="text-xs text-gray-400">Licenses</p>
-              <p className="font-bold text-gray-900 dark:text-white text-sm">{integration.licenses_discovered}</p>
+              <p className="text-xs text-gray-400">License Seats</p>
+              <p className="font-bold text-gray-900 dark:text-white text-sm">{(integration.licenses_discovered || 0).toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2 text-center">
               <p className="text-xs text-gray-400">Users</p>
-              <p className="font-bold text-gray-900 dark:text-white text-sm">{integration.users_synced}</p>
+              <p className="font-bold text-gray-900 dark:text-white text-sm">{(integration.users_synced || 0).toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2 text-center">
-              <p className="text-xs text-gray-400">Frequency</p>
-              <p className="font-bold text-gray-900 dark:text-white text-sm capitalize">{integration.sync_frequency || '—'}</p>
+              <p className="text-xs text-gray-400">Last Sync</p>
+              <p className="font-bold text-gray-900 dark:text-white text-sm">{integration.last_sync ? new Date(integration.last_sync).toLocaleTimeString() : 'Never'}</p>
             </div>
           </div>
         )}
 
-        {/* Config summary (expandable) */}
+        {/* Sync details (expandable) — shows real data from Microsoft Graph etc */}
+        {isConnected && (integration.licenses_discovered > 0 || integration.users_synced > 0) && (
+          <button onClick={loadSyncDetails} className="flex items-center justify-between text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">
+            <span className="flex items-center gap-1"><Info size={12} /> Sync Details & License Breakdown</span>
+            {detailsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+        {detailsOpen && syncDetails && (
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-2 text-xs">
+            {syncDetails.org_name && (
+              <div className="flex justify-between"><span className="text-gray-400">Organization</span><span className="font-semibold text-gray-700 dark:text-gray-300">{syncDetails.org_name}</span></div>
+            )}
+            {syncDetails.domains && syncDetails.domains.length > 0 && (
+              <div className="flex justify-between"><span className="text-gray-400">Domains</span><span className="text-gray-700 dark:text-gray-300 text-right max-w-[200px] truncate">{syncDetails.domains.join(', ')}</span></div>
+            )}
+            <div className="flex justify-between"><span className="text-gray-400">Total Users</span><span className="font-medium text-gray-700 dark:text-gray-300">{syncDetails.total_users}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Enabled / Licensed</span><span className="font-medium text-gray-700 dark:text-gray-300">{syncDetails.enabled_users} / {syncDetails.licensed_users}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">License Seats Used</span><span className="font-medium text-gray-700 dark:text-gray-300">{syncDetails.consumed_license_seats} / {syncDetails.total_license_seats}</span></div>
+
+            {syncDetails.skus && syncDetails.skus.length > 0 && (
+              <div className="pt-1 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-gray-400 mb-1.5 font-semibold uppercase tracking-wider">License SKUs</p>
+                {syncDetails.skus.map((s, i) => (
+                  <div key={i} className="flex justify-between py-0.5">
+                    <span className="text-gray-600 dark:text-gray-400 truncate max-w-[150px]">{s.name}</span>
+                    <span className="text-gray-700 dark:text-gray-300 font-mono">{s.consumed} / {s.enabled}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {syncDetails.top_departments && syncDetails.top_departments.length > 0 && (
+              <div className="pt-1 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-gray-400 mb-1.5 font-semibold uppercase tracking-wider">Top Departments</p>
+                {syncDetails.top_departments.slice(0, 5).map((d, i) => (
+                  <div key={i} className="flex justify-between py-0.5">
+                    <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
+                    <span className="text-gray-700 dark:text-gray-300 font-mono">{d.count} users</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Connection details (expandable) */}
         {isConnected && integration.client_id && (
           <button onClick={() => setExpanded(e => !e)} className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-            <span className="flex items-center gap-1"><Info size={12} /> Connection details</span>
+            <span className="flex items-center gap-1"><Key size={12} /> Connection credentials</span>
             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
         )}
@@ -578,7 +640,6 @@ function IntegrationCard({ integration, canManage, onRefresh }) {
             <div className="flex justify-between"><span className="text-gray-400">Auth Type</span><span className="font-medium text-gray-700 dark:text-gray-300 uppercase">{integration.auth_type}</span></div>
             <div className="flex justify-between"><span className="text-gray-400">Client ID</span><span className="font-mono text-gray-700 dark:text-gray-300 truncate max-w-[160px]">{integration.client_id}</span></div>
             {integration.tenant_id && <div className="flex justify-between"><span className="text-gray-400">Tenant / Domain</span><span className="font-mono text-gray-700 dark:text-gray-300 truncate max-w-[160px]">{integration.tenant_id}</span></div>}
-            <div className="flex justify-between"><span className="text-gray-400">Last Sync</span><span className="text-gray-700 dark:text-gray-300">{integration.last_sync ? new Date(integration.last_sync).toLocaleString() : 'Never'}</span></div>
           </div>
         )}
 
