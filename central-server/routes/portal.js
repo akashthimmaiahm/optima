@@ -4,15 +4,19 @@ const { randomUUID } = require('crypto');
 const { getDb } = require('../database/init');
 const { authenticate, superAdminOnly } = require('../middleware/auth');
 
-// POST /api/portal/verify-key — installer uses this to validate a property key (no auth needed)
+// POST /api/portal/verify-key — property server calls this on startup to register itself
 router.post('/verify-key', (req, res) => {
-  const { property_key } = req.body;
+  const { property_key, ec2_url } = req.body;
   if (!property_key) return res.status(400).json({ error: 'property_key required' });
   const db = getDb();
   const prop = db.prepare(
     "SELECT id, name, slug, domain, plan, status FROM properties WHERE property_key=? AND status='active'"
   ).get(property_key);
   if (!prop) return res.status(404).json({ error: 'Invalid or inactive property key' });
+  // Register the property server's URL so portal can reach it for health checks
+  if (ec2_url) {
+    db.prepare("UPDATE properties SET ec2_url=?, updated_at=datetime('now') WHERE id=?").run(ec2_url, prop.id);
+  }
   res.json({ valid: true, property: prop });
 });
 

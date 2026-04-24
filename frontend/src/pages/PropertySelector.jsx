@@ -6,6 +6,7 @@ import {
   UserPlus, Shield, Check, X, Eye, EyeOff,
   Loader2, Key, MapPin, Image, Hash, Server, Globe, Download,
   Monitor, Apple, Terminal, Copy, CheckCheck, Sun, Moon,
+  Pencil, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../api/axios'
@@ -123,7 +124,7 @@ function AgentDownloadModal({ prop, onClose }) {
 }
 
 // ── Property Card ────────────────────────────────────────────────────────────
-function PropertyCard({ prop, onSelect, selecting, online }) {
+function PropertyCard({ prop, onSelect, selecting, online, isSuperAdmin, onEdit, onDelete }) {
   const code = prop.vdms_id || slugToCode(prop.slug)
   const loading = selecting === prop.id
   const isOffline = online === false   // null = still checking, false = confirmed offline
@@ -142,7 +143,7 @@ function PropertyCard({ prop, onSelect, selecting, online }) {
             <span className="text-xs font-mono font-semibold text-gray-600 dark:text-gray-300 tracking-widest">{code}</span>
             <Info size={13} className="text-blue-500" />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {isChecking
               ? <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-600 animate-pulse" title="Checking…" />
               : isOffline
@@ -150,6 +151,18 @@ function PropertyCard({ prop, onSelect, selecting, online }) {
                 : <span className="w-2.5 h-2.5 rounded-full bg-green-500" title="Online" />
             }
             {isOffline && <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wide">Offline</span>}
+            {isSuperAdmin && (
+              <div className="flex items-center gap-0.5 ml-1">
+                <button type="button" onClick={e => { e.stopPropagation(); onEdit() }} title="Edit"
+                  className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                  <Pencil size={11} />
+                </button>
+                <button type="button" onClick={e => { e.stopPropagation(); onDelete() }} title="Delete"
+                  className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex flex-col items-center justify-center py-6 px-4 gap-3">
@@ -549,6 +562,8 @@ function AddPropertyModal({ onClose, onSaved }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [createdKey, setCreatedKey] = useState(null)   // set after successful creation
+  const [keyCopied, setKeyCopied] = useState(false)
   const logoInputRef = useRef(null)
 
   const set = (field, value) => {
@@ -567,20 +582,75 @@ function AddPropertyModal({ onClose, onSaved }) {
     reader.readAsDataURL(file)
   }
 
+  const copyKey = () => {
+    navigator.clipboard.writeText(createdKey)
+    setKeyCopied(true)
+    setTimeout(() => setKeyCopied(false), 2000)
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     if (!form.name || !form.slug || !form.ec2_url) { setError('Name, slug and server URL are required.'); return }
     setLoading(true)
     setError('')
     try {
-      await api.post('/portal/registry', form)
+      const res = await api.post('/portal/registry', form)
       onSaved()
-      onClose()
+      setCreatedKey(res.data.property_key)
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create property')
     }
     setLoading(false)
   }
+
+  // ── Key reveal screen shown after successful creation ──
+  if (createdKey) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-[#222] rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#1a1a1a]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-green-50 dark:bg-green-600/20 border border-green-200 dark:border-green-600/40 rounded-lg flex items-center justify-center">
+              <Key size={15} className="text-green-500 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Property Created!</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-600">Save this key — it won't be shown again</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-6 space-y-4">
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start gap-3">
+            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Copy this key now and keep it safe. You will need it when starting the property server instance. It cannot be retrieved later.
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 mb-2">Property Key</p>
+            <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#2a2a2a] rounded-xl">
+              <code className="flex-1 text-xs font-mono text-blue-600 dark:text-blue-400 break-all">{createdKey}</code>
+              <button type="button" onClick={copyKey}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors flex-shrink-0">
+                {keyCopied ? <><CheckCheck size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+              </button>
+            </div>
+          </div>
+          <div className="p-3 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#1e1e1e] rounded-xl">
+            <p className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">How to use</p>
+            <ol className="text-[10px] text-gray-500 dark:text-gray-400 space-y-1 list-decimal list-inside">
+              <li>SSH into your property EC2 instance</li>
+              <li>Clone the repo and run <code className="font-mono text-blue-500">node property-server.js</code></li>
+              <li>Enter this key when prompted — the server will register and go online</li>
+            </ol>
+          </div>
+          <button type="button" onClick={onClose}
+            className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -687,6 +757,168 @@ function AddPropertyModal({ onClose, onSaved }) {
   )
 }
 
+// ── Edit Property Modal ───────────────────────────────────────────────────────
+function EditPropertyModal({ prop, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:        prop.name        || '',
+    vdms_id:     prop.vdms_id     || '',
+    address:     prop.address     || '',
+    logo_url:    prop.logo_url    || '',
+    slug:        prop.slug        || '',
+    ec2_url:     prop.ec2_url     || '',
+    domain:      prop.domain      || '',
+    plan:        prop.plan        || 'standard',
+    description: prop.description || '',
+    status:      prop.status      || 'active',
+  })
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+  const logoInputRef            = useRef(null)
+
+  const set = (field, value) => setForm(f => ({ ...f, [field]: value }))
+
+  const handleLogoFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => set('logo_url', ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setLoading(true); setError('')
+    try {
+      await api.put(`/portal/registry/${prop.id}`, form)
+      onSaved(); onClose()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update property')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-[#222] rounded-2xl w-full max-w-lg mx-4 shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#1a1a1a]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-blue-50 dark:bg-blue-600/20 border border-blue-200 dark:border-blue-600/40 rounded-lg flex items-center justify-center">
+              <Pencil size={14} className="text-blue-500 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Edit Property</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-600">{prop.name}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><X size={16} /></button>
+        </div>
+
+        <form onSubmit={submit} className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Logo */}
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-[#111] border-2 border-dashed border-gray-200 dark:border-[#2a2a2a] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {form.logo_url ? <img src={form.logo_url} alt="logo" className="w-full h-full object-cover rounded-xl" /> : <Building2 size={22} className="text-gray-300 dark:text-gray-600" />}
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] text-gray-500 flex items-center gap-1 mb-2"><Image size={10} /> Property Logo</p>
+              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
+              <button type="button" onClick={() => logoInputRef.current.click()}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gray-100 dark:bg-[#1a1a1a] hover:bg-gray-200 dark:hover:bg-[#222] border border-gray-200 dark:border-[#2a2a2a] text-gray-600 dark:text-gray-400 rounded-lg transition-colors">
+                <Download size={11} /> Browse & Upload
+              </button>
+              {form.logo_url && <button type="button" onClick={() => set('logo_url', '')} className="ml-2 text-[10px] text-red-400 hover:text-red-500 transition-colors">Remove</button>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><PropField label="Property Name" icon={Building2} value={form.name} onChange={v => set('name', v)} placeholder="Acme Corporation" required /></div>
+            <PropField label="VDMS ID" icon={Hash} value={form.vdms_id} onChange={v => set('vdms_id', v)} placeholder="VDMS8701" />
+            <div>
+              <label className="text-[10px] text-gray-500 flex items-center gap-1 mb-1"><Hash size={10} /> Slug <span className="text-red-500">*</span></label>
+              <input value={form.slug} onChange={e => set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} required placeholder="acme-corp" className={`${INPUT_CLS} font-mono`} />
+            </div>
+            <div className="col-span-2"><PropField label="Address" icon={MapPin} value={form.address} onChange={v => set('address', v)} placeholder="123 Main St…" /></div>
+            <div className="col-span-2"><PropField label="Server URL" icon={Server} value={form.ec2_url} onChange={v => set('ec2_url', v)} placeholder="http://10.0.1.50:5000" required hint="EC2 URL for health checks and proxying" /></div>
+            <PropField label="Domain" icon={Globe} value={form.domain} onChange={v => set('domain', v)} placeholder="acme.optima.sclera.com" />
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-1">Plan</label>
+              <select value={form.plan} onChange={e => set('plan', e.target.value)} className={INPUT_CLS}>
+                <option value="standard">Standard</option>
+                <option value="professional">Professional</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-1">Status</label>
+              <select value={form.status} onChange={e => set('status', e.target.value)} className={INPUT_CLS}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="text-[10px] text-gray-500 block mb-1">Description</label>
+              <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} placeholder="Brief description…" className={`${INPUT_CLS} resize-none`} />
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-lg px-3 py-2">{error}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button type="submit" disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+              {loading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              {loading ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2.5 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#222] text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-lg text-xs transition-colors">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Delete Confirm Modal ──────────────────────────────────────────────────────
+function DeleteConfirmModal({ prop, onClose, onDeleted }) {
+  const [loading, setLoading] = useState(false)
+
+  const confirm = async () => {
+    setLoading(true)
+    try {
+      await api.delete(`/portal/registry/${prop.id}`)
+      onDeleted(); onClose()
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-[#222] rounded-2xl w-full max-w-sm mx-4 shadow-2xl p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Trash2 size={18} className="text-red-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">Delete Property</p>
+            <p className="text-xs text-gray-500 mt-0.5">This will archive <span className="font-medium text-gray-700 dark:text-gray-300">{prop.name}</span></p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg p-3">
+          The property will be archived and removed from the portal. The property server instance will continue running but won't appear in the property list.
+        </p>
+        <div className="flex gap-2">
+          <button onClick={confirm} disabled={loading}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {loading ? 'Deleting…' : 'Delete Property'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2.5 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#222] text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-lg text-xs transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main PropertySelector ────────────────────────────────────────────────────
 export default function PropertySelector() {
   const { user, accessibleProperties, setAccessibleProperties, setSelectedProperty, logout } = useAuth()
@@ -700,6 +932,8 @@ export default function PropertySelector() {
   const [viewMode, setViewMode] = useState('grid')
   const [loadingProps, setLoadingProps] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editProp, setEditProp]         = useState(null)
+  const [deleteProp, setDeleteProp]     = useState(null)
   // null = not yet checked, true = online, false = offline
   const [healthMap, setHealthMap] = useState({})
 
@@ -909,7 +1143,7 @@ export default function PropertySelector() {
               ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                   {filtered.map(prop => (
-                    <PropertyCard key={prop.id} prop={prop} onSelect={select} selecting={selecting} online={healthMap[prop.id] ?? null} />
+                    <PropertyCard key={prop.id} prop={prop} onSelect={select} selecting={selecting} online={healthMap[prop.id] ?? null} isSuperAdmin={isSuperAdmin} onEdit={() => setEditProp(prop)} onDelete={() => setDeleteProp(prop)} />
                   ))}
                 </div>
               ) : (
@@ -946,23 +1180,37 @@ export default function PropertySelector() {
                           <HardDrive size={11} />
                           <span>{prop.asset_count ?? '—'} assets</span>
                         </div>
-                        <button
-                          onClick={() => !isOffline && select(prop)}
-                          disabled={loading || isOffline || isChecking}
-                          title={isOffline ? 'Property server is offline' : ''}
-                          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 ${
-                            isOffline
-                              ? 'bg-red-100 dark:bg-red-900/20 text-red-400 dark:text-red-600 cursor-not-allowed border border-red-200 dark:border-red-800/40'
-                              : isChecking
-                                ? 'bg-gray-200 dark:bg-[#222] text-gray-400 cursor-wait'
-                                : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60'
-                          }`}>
-                          {loading
-                            ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />Loading…</>
-                            : isOffline ? 'Offline'
-                            : isChecking ? '…'
-                            : 'Select'}
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {isSuperAdmin && (
+                            <>
+                              <button type="button" onClick={() => setEditProp(prop)} title="Edit property"
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                                <Pencil size={13} />
+                              </button>
+                              <button type="button" onClick={() => setDeleteProp(prop)} title="Delete property"
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => !isOffline && select(prop)}
+                            disabled={loading || isOffline || isChecking}
+                            title={isOffline ? 'Property server is offline' : ''}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                              isOffline
+                                ? 'bg-red-100 dark:bg-red-900/20 text-red-400 dark:text-red-600 cursor-not-allowed border border-red-200 dark:border-red-800/40'
+                                : isChecking
+                                  ? 'bg-gray-200 dark:bg-[#222] text-gray-400 cursor-wait'
+                                  : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60'
+                            }`}>
+                            {loading
+                              ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />Loading…</>
+                              : isOffline ? 'Offline'
+                              : isChecking ? '…'
+                              : 'Select'}
+                          </button>
+                        </div>
                       </div>
                     )
                   })}
@@ -976,10 +1224,13 @@ export default function PropertySelector() {
       {showSort && <div className="fixed inset-0 z-40" onClick={() => setShowSort(false)} />}
 
       {showAddModal && (
-        <AddPropertyModal
-          onClose={() => setShowAddModal(false)}
-          onSaved={fetchProperties}
-        />
+        <AddPropertyModal onClose={() => setShowAddModal(false)} onSaved={fetchProperties} />
+      )}
+      {editProp && (
+        <EditPropertyModal prop={editProp} onClose={() => setEditProp(null)} onSaved={fetchProperties} />
+      )}
+      {deleteProp && (
+        <DeleteConfirmModal prop={deleteProp} onClose={() => setDeleteProp(null)} onDeleted={fetchProperties} />
       )}
     </div>
   )
