@@ -1,9 +1,39 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, XCircle, RefreshCw, Zap, Settings, Info, Key, Globe, Users, Shield, AlertCircle, ChevronDown, ChevronUp, Plus, Search, BookOpen, ExternalLink, Trash2 } from 'lucide-react'
+import { CheckCircle2, XCircle, RefreshCw, Zap, Settings, Info, Key, Globe, Users, Shield, AlertCircle, ChevronDown, ChevronUp, Plus, Search, BookOpen, ExternalLink, Trash2, HelpCircle, MapPin } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import Modal from '../../components/common/Modal'
 import { useAuth } from '../../contexts/AuthContext'
+
+// ── AWS Regions ──────────────────────────────────────────────────────────────
+const AWS_REGIONS = [
+  { value: 'all',            label: 'All Regions' },
+  { value: 'us-east-1',     label: 'US East (N. Virginia)' },
+  { value: 'us-east-2',     label: 'US East (Ohio)' },
+  { value: 'us-west-1',     label: 'US West (N. California)' },
+  { value: 'us-west-2',     label: 'US West (Oregon)' },
+  { value: 'af-south-1',    label: 'Africa (Cape Town)' },
+  { value: 'ap-east-1',     label: 'Asia Pacific (Hong Kong)' },
+  { value: 'ap-south-1',    label: 'Asia Pacific (Mumbai)' },
+  { value: 'ap-south-2',    label: 'Asia Pacific (Hyderabad)' },
+  { value: 'ap-southeast-1',label: 'Asia Pacific (Singapore)' },
+  { value: 'ap-southeast-2',label: 'Asia Pacific (Sydney)' },
+  { value: 'ap-southeast-3',label: 'Asia Pacific (Jakarta)' },
+  { value: 'ap-northeast-1',label: 'Asia Pacific (Tokyo)' },
+  { value: 'ap-northeast-2',label: 'Asia Pacific (Seoul)' },
+  { value: 'ap-northeast-3',label: 'Asia Pacific (Osaka)' },
+  { value: 'ca-central-1',  label: 'Canada (Central)' },
+  { value: 'eu-central-1',  label: 'Europe (Frankfurt)' },
+  { value: 'eu-central-2',  label: 'Europe (Zurich)' },
+  { value: 'eu-west-1',     label: 'Europe (Ireland)' },
+  { value: 'eu-west-2',     label: 'Europe (London)' },
+  { value: 'eu-west-3',     label: 'Europe (Paris)' },
+  { value: 'eu-south-1',    label: 'Europe (Milan)' },
+  { value: 'eu-north-1',    label: 'Europe (Stockholm)' },
+  { value: 'me-south-1',    label: 'Middle East (Bahrain)' },
+  { value: 'me-central-1',  label: 'Middle East (UAE)' },
+  { value: 'sa-east-1',     label: 'South America (Sao Paulo)' },
+]
 
 // ── Full catalog of supported cloud applications ──────────────────────────────
 const APP_CATALOG = [
@@ -13,6 +43,17 @@ const APP_CATALOG = [
     description: 'Sync users, licenses, and subscriptions from Microsoft 365 via Microsoft Graph API.',
     auth_type: 'oauth2', api_endpoint: 'https://graph.microsoft.com/v1.0',
     setup: 'Azure Portal → App registrations → New registration → API permissions (User.Read.All, Directory.Read.All)',
+    help: [
+      'Go to portal.azure.com and sign in with your admin account.',
+      'Navigate to Azure Active Directory → App registrations → New registration.',
+      'Name it "Optima ITAM" and set the redirect URI to your Optima server URL.',
+      'After creation, copy the Application (Client) ID from the overview page.',
+      'Go to Certificates & secrets → New client secret → Copy the secret value immediately.',
+      'Go to API permissions → Add → Microsoft Graph → Application permissions.',
+      'Add: User.Read.All, Directory.Read.All, Organization.Read.All.',
+      'Click "Grant admin consent" for all permissions.',
+      'Copy the Tenant ID from Azure Active Directory → Overview.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Application (Client) ID', placeholder: '00000000-0000-0000-0000-000000000000', required: true },
       { key: 'client_secret', label: 'Client Secret Value',     placeholder: 'Paste the secret value (not the ID)', type: 'password', required: true },
@@ -25,6 +66,17 @@ const APP_CATALOG = [
     description: 'Discover users, licenses, and devices across your Google Workspace organization.',
     auth_type: 'service_account', api_endpoint: 'https://admin.googleapis.com',
     setup: 'Google Cloud Console → IAM → Service Accounts → Create key (JSON) → Enable Admin SDK API',
+    help: [
+      'Go to console.cloud.google.com and create a new project (or select existing).',
+      'Navigate to APIs & Services → Enable APIs → Search "Admin SDK API" → Enable it.',
+      'Go to IAM & Admin → Service Accounts → Create Service Account.',
+      'Name it "optima-itam" and grant it the "Viewer" role.',
+      'Click the service account → Keys → Add Key → Create new key → JSON.',
+      'Download the JSON key file — you will paste its contents in the configuration.',
+      'Go to admin.google.com → Security → API Controls → Domain-wide delegation.',
+      'Add the service account Client ID with scopes: https://www.googleapis.com/auth/admin.directory.user.readonly, https://www.googleapis.com/auth/admin.directory.domain.readonly.',
+      'Enter your Google Workspace primary domain (e.g. yourcompany.com).',
+    ],
     fields: [
       { key: 'client_id',     label: 'Service Account Email', placeholder: 'sa@project.iam.gserviceaccount.com', required: true },
       { key: 'client_secret', label: 'Service Account Key (JSON)', placeholder: 'Paste full JSON key contents', type: 'textarea', required: true },
@@ -37,6 +89,16 @@ const APP_CATALOG = [
     description: 'Connect Salesforce to track user licenses, permission sets, and active subscriptions.',
     auth_type: 'oauth2', api_endpoint: 'https://login.salesforce.com/services/oauth2',
     setup: 'Salesforce Setup → App Manager → New Connected App → Enable OAuth (api, refresh_token scopes)',
+    help: [
+      'Log in to Salesforce as an administrator.',
+      'Go to Setup → Apps → App Manager → New Connected App.',
+      'Set the app name to "Optima ITAM" and provide a contact email.',
+      'Check "Enable OAuth Settings" and set the callback URL to your Optima server.',
+      'Select OAuth scopes: "api", "refresh_token", "offline_access".',
+      'Save and wait 2-10 minutes for the app to activate.',
+      'Copy the Consumer Key (Client ID) and Consumer Secret.',
+      'Your Instance URL is your Salesforce domain (e.g. https://yourorg.my.salesforce.com).',
+    ],
     fields: [
       { key: 'client_id',     label: 'Consumer Key',    placeholder: 'Salesforce Connected App consumer key', required: true },
       { key: 'client_secret', label: 'Consumer Secret', placeholder: 'Consumer secret', type: 'password', required: true },
@@ -46,13 +108,24 @@ const APP_CATALOG = [
   {
     key: 'aws_iam', name: 'AWS IAM', provider: 'Amazon', type: 'cloud',
     emoji: '🟠', color: 'bg-orange-50 dark:bg-orange-900/20',
-    description: 'Enumerate IAM users, roles, and policies across your AWS account.',
+    description: 'Enumerate IAM users, roles, policies, EC2 instances, and resources across your AWS account.',
     auth_type: 'api_key', api_endpoint: 'https://iam.amazonaws.com',
     setup: 'AWS Console → IAM → Users → Create user → Attach ReadOnlyAccess policy → Create access key',
+    help: [
+      'Sign in to the AWS Management Console at console.aws.amazon.com.',
+      'Navigate to IAM → Users → Create user.',
+      'Name it "optima-readonly" and select "Programmatic access".',
+      'Attach the "ReadOnlyAccess" managed policy (or create a custom policy with iam:List*, iam:Get*, ec2:Describe*, organizations:List* permissions).',
+      'After creating the user, go to Security credentials → Create access key.',
+      'Select "Third-party service" as the use case.',
+      'Copy the Access Key ID and Secret Access Key (shown only once).',
+      'Select a region or choose "All Regions" to scan resources across every AWS region.',
+      'For multi-account setups, use AWS Organizations with a cross-account IAM role.',
+    ],
     fields: [
-      { key: 'api_key',   label: 'Access Key ID',     placeholder: 'AKIAIOSFODNN7EXAMPLE', required: true },
+      { key: 'api_key',       label: 'Access Key ID',     placeholder: 'AKIAIOSFODNN7EXAMPLE', required: true },
       { key: 'client_secret', label: 'Secret Access Key', placeholder: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', type: 'password', required: true },
-      { key: 'tenant_id', label: 'Default Region',    placeholder: 'us-east-1', required: true },
+      { key: 'region',        label: 'AWS Region',        type: 'aws_region', required: true },
     ],
   },
   {
@@ -61,6 +134,17 @@ const APP_CATALOG = [
     description: 'Discover Azure subscriptions, VMs, resource groups, and cost data.',
     auth_type: 'oauth2', api_endpoint: 'https://management.azure.com',
     setup: 'Azure Portal → App registrations → New registration → Certificates & secrets → Subscription → Access control (IAM) → Reader role',
+    help: [
+      'Go to portal.azure.com and sign in as an administrator.',
+      'Navigate to Azure Active Directory → App registrations → New registration.',
+      'Name it "Optima Azure Monitor" with single-tenant access.',
+      'Copy the Application (Client) ID and Directory (Tenant) ID from the overview.',
+      'Go to Certificates & secrets → New client secret → Copy the value.',
+      'Navigate to the target Subscription → Access control (IAM) → Add role assignment.',
+      'Assign "Reader" role to the app registration you just created.',
+      'For cost data, also assign "Cost Management Reader" role.',
+      'Repeat IAM role assignment for each subscription you want to monitor.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Application (Client) ID', placeholder: 'Azure AD app client ID', required: true },
       { key: 'client_secret', label: 'Client Secret',           placeholder: 'App registration secret value', type: 'password', required: true },
@@ -73,6 +157,16 @@ const APP_CATALOG = [
     description: 'Scan GCP projects, compute instances, and billing data.',
     auth_type: 'service_account', api_endpoint: 'https://cloudresourcemanager.googleapis.com',
     setup: 'GCP Console → IAM → Service Accounts → Create → Viewer role → Create JSON key',
+    help: [
+      'Go to console.cloud.google.com and select or create a project.',
+      'Navigate to IAM & Admin → Service Accounts → Create Service Account.',
+      'Name it "optima-itam" and grant it the "Viewer" role at the project level.',
+      'For organization-wide scanning, grant "Organization Viewer" at org level.',
+      'Click the service account → Keys → Add Key → JSON → Download.',
+      'Enable the following APIs: Cloud Resource Manager, Compute Engine, Cloud Billing.',
+      'Paste the entire JSON key file contents in the configuration field.',
+      'Enter the GCP Project ID (found on the project dashboard).',
+    ],
     fields: [
       { key: 'client_id',     label: 'Service Account Email', placeholder: 'sa@project.iam.gserviceaccount.com', required: true },
       { key: 'client_secret', label: 'Service Account Key (JSON)', placeholder: 'Paste full JSON key contents', type: 'textarea', required: true },
@@ -85,6 +179,15 @@ const APP_CATALOG = [
     description: 'Sync Slack workspace members, channels, and subscription tier details.',
     auth_type: 'oauth2', api_endpoint: 'https://slack.com/api',
     setup: 'api.slack.com → Your Apps → Create New App → OAuth & Permissions → users:read, admin scopes',
+    help: [
+      'Go to api.slack.com/apps and click "Create New App" → "From scratch".',
+      'Name it "Optima ITAM" and select your workspace.',
+      'Go to OAuth & Permissions → Add Bot Token Scopes: users:read, users:read.email, team:read, admin.teams:read.',
+      'Install the app to your workspace and authorize.',
+      'Copy the Bot User OAuth Token (starts with xoxb-).',
+      'Copy the Client ID and Client Secret from Basic Information.',
+      'The bot token provides read-only access to workspace member data.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Client ID',     placeholder: 'Slack OAuth client ID', required: true },
       { key: 'client_secret', label: 'Client Secret', placeholder: 'Slack OAuth client secret', type: 'password', required: true },
@@ -97,6 +200,15 @@ const APP_CATALOG = [
     description: 'Pull Zoom users, license types, and meeting usage statistics.',
     auth_type: 'oauth2', api_endpoint: 'https://api.zoom.us/v2',
     setup: 'marketplace.zoom.us → Develop → Build App → Server-to-Server OAuth → Account Management permission',
+    help: [
+      'Go to marketplace.zoom.us and sign in as an admin.',
+      'Click Develop → Build App → Server-to-Server OAuth.',
+      'Name the app "Optima ITAM" and copy the Account ID.',
+      'Copy the Client ID and Client Secret from the app credentials.',
+      'Go to Scopes → Add: user:read:list_users:admin, account:read:admin.',
+      'Activate the app.',
+      'The Account ID goes in the first field, Client ID in the second.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Account ID',    placeholder: 'Zoom Account ID', required: true },
       { key: 'api_key',       label: 'Client ID',     placeholder: 'Zoom OAuth Client ID', required: true },
@@ -109,6 +221,15 @@ const APP_CATALOG = [
     description: 'Enumerate GitHub organization members, repos, and seat usage.',
     auth_type: 'api_key', api_endpoint: 'https://api.github.com',
     setup: 'GitHub → Settings → Developer settings → Personal access tokens (Classic) → read:org, read:user scopes',
+    help: [
+      'Go to github.com → Your profile → Settings → Developer settings.',
+      'Click Personal access tokens → Tokens (classic) → Generate new token.',
+      'Name it "Optima ITAM" and set an expiration (90 days recommended).',
+      'Select scopes: read:org (read organization data), read:user (read user profiles).',
+      'For GitHub Enterprise, also select admin:org for seat count data.',
+      'Click "Generate token" and copy it immediately (shown only once).',
+      'Enter your GitHub organization name (the URL slug, e.g. "my-company").',
+    ],
     fields: [
       { key: 'api_key',   label: 'Personal Access Token', placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxx', type: 'password', required: true },
       { key: 'tenant_id', label: 'Organization Name',     placeholder: 'your-org-name', required: true },
@@ -120,6 +241,15 @@ const APP_CATALOG = [
     description: 'Sync Jira Cloud users, projects, and license seat consumption.',
     auth_type: 'api_key', api_endpoint: 'https://your-domain.atlassian.net',
     setup: 'id.atlassian.com → Security → Create and manage API tokens → Read:jira-user scope',
+    help: [
+      'Go to id.atlassian.com → Security → Create and manage API tokens.',
+      'Click "Create API token" and name it "Optima ITAM".',
+      'Copy the generated token (shown only once).',
+      'Use your Atlassian account email as the "Account Email".',
+      'Enter your Jira instance URL (e.g. https://yourcompany.atlassian.net).',
+      'The API token + email combination is used for Basic authentication.',
+      'Ensure your account has admin access to view all users and licenses.',
+    ],
     fields: [
       { key: 'client_id', label: 'Atlassian Account Email', placeholder: 'admin@yourcompany.com', required: true },
       { key: 'api_key',   label: 'API Token',               placeholder: 'Paste your Atlassian API token', type: 'password', required: true },
@@ -132,6 +262,16 @@ const APP_CATALOG = [
     description: 'Discover Adobe CC licenses, product profiles, and user assignments.',
     auth_type: 'oauth2', api_endpoint: 'https://ims-na1.adobelogin.com/ims',
     setup: 'developer.adobe.com → Console → Create project → Add API → User Management API → Service Account (JWT)',
+    help: [
+      'Go to developer.adobe.com and sign in with your Adobe admin account.',
+      'Click Console → Create new project → Add API.',
+      'Select "User Management API" from the list.',
+      'Choose "Service Account (JWT)" authentication.',
+      'Generate a key pair or upload your own public key.',
+      'Download the private key file for configuration.',
+      'Copy the Client ID (API Key) and Client Secret from the project overview.',
+      'Find your Organization ID in Adobe Admin Console → Settings → Identity.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Client ID (API Key)', placeholder: 'Adobe console Client ID', required: true },
       { key: 'client_secret', label: 'Client Secret',       placeholder: 'Adobe console Client secret', type: 'password', required: true },
@@ -144,6 +284,15 @@ const APP_CATALOG = [
     description: 'Sync Okta users, groups, app assignments, and MFA status.',
     auth_type: 'api_key', api_endpoint: 'https://your-domain.okta.com/api/v1',
     setup: 'Okta Admin → Security → API → Tokens → Create token (Read-only Admin role recommended)',
+    help: [
+      'Sign in to your Okta Admin Console (yourcompany-admin.okta.com).',
+      'Navigate to Security → API → Tokens tab.',
+      'Click "Create Token" and name it "Optima ITAM".',
+      'Copy the token value immediately (shown only once).',
+      'The token inherits the permissions of the user who created it.',
+      'Use a Read-only Admin account for minimum required access.',
+      'Enter your Okta domain (e.g. https://yourcompany.okta.com).',
+    ],
     fields: [
       { key: 'api_key',   label: 'API Token',      placeholder: 'Okta API token', type: 'password', required: true },
       { key: 'tenant_id', label: 'Okta Domain',    placeholder: 'https://yourcompany.okta.com', required: true },
@@ -155,6 +304,16 @@ const APP_CATALOG = [
     description: 'Pull Dropbox Business team member counts and storage usage.',
     auth_type: 'oauth2', api_endpoint: 'https://api.dropboxapi.com/2',
     setup: 'dropbox.com/developers → App Console → Create app → Team information permission → Generate access token',
+    help: [
+      'Go to dropbox.com/developers and sign in with your Dropbox Business admin.',
+      'Click App Console → Create app.',
+      'Select "Scoped access" and "Full Dropbox" access type.',
+      'Name it "Optima ITAM" and create.',
+      'Go to Permissions → Check "team_info.read" and "members.read".',
+      'Go to Settings → Generate access token (for testing) or set up OAuth flow.',
+      'Copy the access token. For production, use a long-lived refresh token.',
+      'Team ID is optional — it is auto-detected from the token.',
+    ],
     fields: [
       { key: 'api_key',   label: 'Access Token', placeholder: 'Dropbox long-lived access token', type: 'password', required: true },
       { key: 'tenant_id', label: 'Team ID',      placeholder: 'Dropbox Business team ID (optional)' },
@@ -166,6 +325,16 @@ const APP_CATALOG = [
     description: 'Integrate with ServiceNow to sync CMDB assets, users, and IT service records.',
     auth_type: 'api_key', api_endpoint: 'https://your-instance.service-now.com/api',
     setup: 'ServiceNow → System Security → Users → Create integration user → Assign itil role → Basic auth',
+    help: [
+      'Log in to your ServiceNow instance as an admin.',
+      'Navigate to System Security → Users → New.',
+      'Create a user named "optima_integration" with a strong password.',
+      'Go to the user\'s Roles tab and add: itil, asset, cmdb_read.',
+      'Optionally restrict the user to read-only tables via ACLs.',
+      'Enter the instance URL (e.g. https://your-instance.service-now.com).',
+      'Use the username and password as credentials in Optima.',
+      'The REST API is enabled by default on ServiceNow instances.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Username',      placeholder: 'ServiceNow integration username', required: true },
       { key: 'client_secret', label: 'Password',      placeholder: 'Integration user password', type: 'password', required: true },
@@ -178,6 +347,16 @@ const APP_CATALOG = [
     description: 'Sync enrolled devices, compliance status, and app deployments from Microsoft Intune.',
     auth_type: 'oauth2', api_endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement',
     setup: 'Azure Portal → App registrations → API permissions → DeviceManagementManagedDevices.Read.All',
+    help: [
+      'Go to portal.azure.com → Azure Active Directory → App registrations.',
+      'Register a new app or reuse your Microsoft 365 app registration.',
+      'Go to API permissions → Add → Microsoft Graph → Application permissions.',
+      'Add: DeviceManagementManagedDevices.Read.All, DeviceManagementConfiguration.Read.All.',
+      'Click "Grant admin consent" for the organization.',
+      'Go to Certificates & secrets → Create a new client secret.',
+      'Copy Application (Client) ID, Client Secret, and Tenant ID.',
+      'If reusing the M365 app, just add the Intune permissions — same credentials work.',
+    ],
     fields: [
       { key: 'client_id',     label: 'Application (Client) ID', placeholder: 'Azure AD app client ID', required: true },
       { key: 'client_secret', label: 'Client Secret',           placeholder: 'App registration secret value', type: 'password', required: true },
@@ -190,6 +369,16 @@ const APP_CATALOG = [
     description: 'Pull endpoint agent status, device counts, and detection summaries from Falcon.',
     auth_type: 'api_key', api_endpoint: 'https://api.crowdstrike.com',
     setup: 'Falcon Console → Support → API Clients → Create API client → Hosts: Read scope',
+    help: [
+      'Sign in to the CrowdStrike Falcon console.',
+      'Navigate to Support → API Clients and Keys.',
+      'Click "Add new API client" and name it "Optima ITAM".',
+      'Select the scope: Hosts → Read (minimum required).',
+      'Optionally add: Detections → Read, Prevention Policies → Read.',
+      'Copy the Client ID and Client Secret after creation.',
+      'Select your CrowdStrike cloud region (e.g. us-1, us-2, eu-1, us-gov-1).',
+      'The API base URL varies by region (api.crowdstrike.com for US-1).',
+    ],
     fields: [
       { key: 'client_id',     label: 'Client ID',     placeholder: 'CrowdStrike API client ID', required: true },
       { key: 'client_secret', label: 'Client Secret', placeholder: 'CrowdStrike API client secret', type: 'password', required: true },
@@ -202,6 +391,15 @@ const APP_CATALOG = [
     description: 'Pull host counts, agent coverage, and infrastructure metrics from Datadog.',
     auth_type: 'api_key', api_endpoint: 'https://api.datadoghq.com/api/v1',
     setup: 'Datadog → Organization Settings → API Keys → Create key; Scopes: metrics_read, infrastructure_read',
+    help: [
+      'Log in to your Datadog account.',
+      'Go to Organization Settings → API Keys → New Key.',
+      'Name the key "Optima ITAM" and copy it.',
+      'Go to Organization Settings → Application Keys → New Key.',
+      'Name it "Optima ITAM" and copy the Application Key.',
+      'If you use a regional Datadog site, enter the site URL (e.g. us3.datadoghq.com).',
+      'The API Key goes in the first field, Application Key in the second.',
+    ],
     fields: [
       { key: 'api_key',   label: 'API Key',         placeholder: 'Datadog API key', type: 'password', required: true },
       { key: 'client_id', label: 'Application Key', placeholder: 'Datadog application key', required: true },
@@ -214,6 +412,16 @@ const APP_CATALOG = [
     description: 'Sync employee headcount, departments, and HR seat data from Workday.',
     auth_type: 'oauth2', api_endpoint: 'https://wd2-impl-services1.workday.com/ccx/api',
     setup: 'Workday → System → Integration System → Create Integration System User → Assign security policy',
+    help: [
+      'Sign in to Workday as a Security Administrator.',
+      'Navigate to System menu → Integration System → Create Integration System User.',
+      'Set a username and password for the integration user.',
+      'Go to Security → Assign Security Policy → Create security group for API access.',
+      'Add the integration user to the security group.',
+      'Grant the group: Get_Workers, Get_Organizations read access.',
+      'Copy the Client ID and Client Secret from the API Client registration.',
+      'Enter your Workday tenant name (found in the URL after "wd5.myworkday.com/").',
+    ],
     fields: [
       { key: 'client_id',     label: 'Client ID',     placeholder: 'Workday OAuth client ID', required: true },
       { key: 'client_secret', label: 'Client Secret', placeholder: 'Workday OAuth client secret', type: 'password', required: true },
@@ -293,6 +501,7 @@ function ConfigModal({ integration, mode, onClose, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const fields = catalogFields || genericFields[form.auth_type] || genericFields.oauth2
   const set    = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -320,17 +529,40 @@ function ConfigModal({ integration, mode, onClose, onSaved }) {
       {/* Header */}
       <div className={`flex items-center gap-3 p-4 rounded-xl ${meta.color}`}>
         <span className="text-3xl">{catalogEntry?.emoji || meta.emoji}</span>
-        <div>
+        <div className="flex-1">
           <p className="font-semibold text-gray-900 dark:text-white text-lg">{integration?.name}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">{catalogEntry?.description || integration?.api_endpoint}</p>
         </div>
+        {catalogEntry?.help && (
+          <button type="button" onClick={() => setHelpOpen(h => !h)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${helpOpen ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-white/70 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-700'}`}>
+            <HelpCircle size={14} /> {helpOpen ? 'Hide Guide' : 'Setup Guide'}
+          </button>
+        )}
       </div>
 
-      {/* Setup guide */}
-      {catalogEntry?.setup && (
+      {/* Detailed Help / Setup Guide (collapsible) */}
+      {helpOpen && catalogEntry?.help && (
+        <div className="border border-green-200 dark:border-green-800 rounded-xl p-4 bg-green-50 dark:bg-green-900/10">
+          <p className="text-sm font-semibold text-green-800 dark:text-green-300 mb-3 flex items-center gap-2">
+            <BookOpen size={14} /> Step-by-Step Configuration Guide
+          </p>
+          <ol className="space-y-2">
+            {catalogEntry.help.map((step, i) => (
+              <li key={i} className="flex gap-3 text-xs text-green-900 dark:text-green-200">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 flex items-center justify-center font-bold text-[10px]">{i + 1}</span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {/* Quick setup reference */}
+      {catalogEntry?.setup && !helpOpen && (
         <div className="flex gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-300 text-xs">
           <BookOpen size={14} className="shrink-0 mt-0.5" />
-          <div><span className="font-semibold">Setup guide: </span>{catalogEntry.setup}</div>
+          <div><span className="font-semibold">Quick path: </span>{catalogEntry.setup}</div>
         </div>
       )}
 
@@ -365,7 +597,21 @@ function ConfigModal({ integration, mode, onClose, onSaved }) {
           {fields.map(f => (
             <div key={f.key}>
               <label className="label">{f.label}{f.required && <span className="text-red-500 ml-1">*</span>}</label>
-              {f.type === 'textarea' ? (
+              {f.type === 'aws_region' ? (
+                <div className="space-y-2">
+                  <select className="input" value={form[f.key] || ''} onChange={e => set(f.key, e.target.value)} required={f.required}>
+                    <option value="">-- Select Region --</option>
+                    {AWS_REGIONS.map(r => (
+                      <option key={r.value} value={r.value}>
+                        {r.value === 'all' ? `${r.label} (scan every region)` : `${r.value} — ${r.label}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1">
+                    <MapPin size={10} /> Select "All Regions" to scan resources across every AWS region, or pick a specific region.
+                  </p>
+                </div>
+              ) : f.type === 'textarea' ? (
                 <textarea className="input font-mono text-xs" rows={4} placeholder={f.placeholder}
                   value={form[f.key] || ''} onChange={e => set(f.key, e.target.value)} required={f.required} />
               ) : (
@@ -415,6 +661,7 @@ function AppCatalogModal({ existingIntegrations, onAdd, onClose }) {
   const [search, setSearch]         = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [adding, setAdding]         = useState(null)   // catalog key being added
+  const [helpExpanded, setHelpExpanded] = useState(null) // catalog key with help open
 
   const existingNames = new Set(existingIntegrations.map(i => i.name.toLowerCase()))
 
@@ -465,26 +712,57 @@ function AppCatalogModal({ existingIntegrations, onAdd, onClose }) {
         {filtered.map(app => {
           const isAdded = existingNames.has(app.name.toLowerCase())
           const isAdding = adding === app.key
+          const isHelpOpen = helpExpanded === app.key
           return (
-            <div key={app.key} className={`border rounded-xl p-4 flex gap-3 transition-colors ${isAdded ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'}`}>
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl shrink-0 ${app.color}`}>
-                {app.emoji}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{app.name}</p>
-                  {isAdded
-                    ? <span className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1 shrink-0"><CheckCircle2 size={12} /> Added</span>
-                    : <button onClick={() => handleAdd(app)} disabled={isAdding}
-                        className="btn-primary text-xs py-1 px-2.5 shrink-0">
-                        {isAdding ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
-                        {isAdding ? 'Adding...' : 'Add'}
-                      </button>
-                  }
+            <div key={app.key} className={`border rounded-xl p-4 transition-colors ${isAdded ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'} ${isHelpOpen ? 'col-span-1 sm:col-span-2' : ''}`}>
+              <div className="flex gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl shrink-0 ${app.color}`}>
+                  {app.emoji}
                 </div>
-                <p className="text-xs text-gray-400 capitalize mt-0.5">{app.type.replace(/_/g, ' ')} · {authTypeLabels[app.auth_type]}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{app.description}</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{app.name}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {app.help && (
+                        <button onClick={() => setHelpExpanded(isHelpOpen ? null : app.key)}
+                          className={`p-1 rounded-md transition-colors ${isHelpOpen ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                          title="Setup guide">
+                          <HelpCircle size={14} />
+                        </button>
+                      )}
+                      {isAdded
+                        ? <span className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1"><CheckCircle2 size={12} /> Added</span>
+                        : <button onClick={() => handleAdd(app)} disabled={isAdding}
+                            className="btn-primary text-xs py-1 px-2.5">
+                            {isAdding ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
+                            {isAdding ? 'Adding...' : 'Add'}
+                          </button>
+                      }
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 capitalize mt-0.5">{app.type.replace(/_/g, ' ')} · {authTypeLabels[app.auth_type]}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{app.description}</p>
+                </div>
               </div>
+              {/* Inline help section */}
+              {isHelpOpen && app.help && (
+                <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+                  <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2 flex items-center gap-1.5">
+                    <BookOpen size={12} /> How to Configure {app.name}
+                  </p>
+                  <ol className="space-y-1.5">
+                    {app.help.map((step, i) => (
+                      <li key={i} className="flex gap-2 text-[11px] text-gray-600 dark:text-gray-400">
+                        <span className="flex-shrink-0 w-4 h-4 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 flex items-center justify-center font-bold text-[9px]">{i + 1}</span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                    <Info size={10} /> Quick path: {app.setup}
+                  </p>
+                </div>
+              )}
             </div>
           )
         })}
