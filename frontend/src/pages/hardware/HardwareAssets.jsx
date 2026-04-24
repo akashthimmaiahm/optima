@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Cpu, HardDrive, Wifi, Bot, User } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import Modal from '../../components/common/Modal'
@@ -26,6 +26,131 @@ function warrantyState(a) {
   if (exp < now)  return 'out'
   if (exp < in90) return 'expiring'
   return 'in'
+}
+
+function HardwareRow({ asset: a, canEdit, onEdit, onDelete }) {
+  const [expanded, setExpanded] = useState(false)
+  const isAgent = a.asset_tag?.startsWith('AGT-')
+
+  return (
+    <>
+      <tr className="table-row">
+        <td className="table-cell">
+          <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </td>
+        <td className="table-cell">
+          <div>
+            <p className="font-medium text-gray-900 dark:text-white">{a.name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[10px] text-gray-400 font-mono">{a.asset_tag}</p>
+              {a.serial_number && <p className="text-[10px] text-gray-500">SN: {a.serial_number}</p>}
+            </div>
+          </div>
+        </td>
+        <td className="table-cell">
+          <Badge variant="info">{a.type}</Badge>
+          <p className="text-[10px] text-gray-400 mt-0.5">{a.manufacturer} {a.model}</p>
+        </td>
+        <td className="table-cell">
+          {a.os && <p className="text-xs text-gray-700 dark:text-gray-300 truncate max-w-[180px]">{a.os}</p>}
+          <div className="flex items-center gap-2 mt-0.5">
+            {a.processor && <span className="text-[10px] text-gray-400 flex items-center gap-0.5"><Cpu size={9} />{a.processor.split(' ').slice(0, 3).join(' ')}</span>}
+            {a.ram && <span className="text-[10px] text-gray-400">{a.ram}</span>}
+          </div>
+        </td>
+        <td className="table-cell">
+          {a.ip_address ? (
+            <div>
+              <p className="text-xs text-gray-700 dark:text-gray-300 font-mono">{a.ip_address}</p>
+              {a.mac_address && <p className="text-[10px] text-gray-500 font-mono">{a.mac_address}</p>}
+            </div>
+          ) : <span className="text-gray-500 text-xs">—</span>}
+        </td>
+        <td className="table-cell">
+          <Badge variant={statusVariant[a.status] || 'default'}>{a.status?.replace('_', ' ')}</Badge>
+          <Badge variant={conditionVariant[a.condition] || 'default'} className="ml-1">{a.condition}</Badge>
+        </td>
+        <td className="table-cell">
+          <div className="space-y-1">
+            {a.is_eol ? (
+              <div className="flex items-center gap-1">
+                <AlertTriangle size={12} className="text-red-400" />
+                <span className="text-[10px] font-semibold text-red-400">EOL</span>
+              </div>
+            ) : null}
+            {a.warranty_expiry ? (() => {
+              const ws = warrantyState(a)
+              const colors = { in: 'text-green-400', expiring: 'text-yellow-400', out: 'text-red-400' }
+              const Icon = ws === 'in' ? ShieldCheck : ShieldOff
+              return (
+                <div className="flex items-center gap-1">
+                  <Icon size={12} className={colors[ws]} />
+                  <span className={`text-[10px] font-medium ${colors[ws]}`}>
+                    {ws === 'in' ? 'Active' : ws === 'expiring' ? 'Expiring' : 'Expired'}
+                  </span>
+                </div>
+              )
+            })() : <span className="text-gray-600 text-[10px]">N/A</span>}
+          </div>
+        </td>
+        <td className="table-cell">
+          {isAgent ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-purple-500 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-full">
+              <Bot size={10} /> Agent
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+              <User size={10} /> Manual
+            </span>
+          )}
+        </td>
+        <td className="table-cell">
+          <div className="flex gap-1">
+            {canEdit && <>
+              <button onClick={() => onEdit(a)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-500 hover:text-blue-400 transition-colors"><Edit size={14} /></button>
+              <button onClick={() => onDelete(a.id)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+            </>}
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-gray-50 dark:bg-gray-800/30">
+          <td colSpan={9} className="px-6 py-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+              <div>
+                <p className="text-gray-400 font-semibold uppercase text-[10px] mb-1">Hardware</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Manufacturer:</span> {a.manufacturer || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Model:</span> {a.model || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Serial:</span> {a.serial_number || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Type:</span> {a.type}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 font-semibold uppercase text-[10px] mb-1">System</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">OS:</span> {a.os || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Processor:</span> {a.processor || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">RAM:</span> {a.ram || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Storage:</span> {a.storage || '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 font-semibold uppercase text-[10px] mb-1">Network</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">IP:</span> {a.ip_address || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">MAC:</span> {a.mac_address || '—'}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 font-semibold uppercase text-[10px] mb-1">Assignment</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Assigned to:</span> {a.assigned_to || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Department:</span> {a.department || '—'}</p>
+                <p className="text-gray-700 dark:text-gray-300"><span className="text-gray-400">Location:</span> {a.location || '—'}</p>
+                {a.notes && <p className="text-gray-500 mt-1">{a.notes}</p>}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
 }
 
 export default function HardwareAssets() {
@@ -117,19 +242,35 @@ export default function HardwareAssets() {
         <button onClick={load} className="btn-secondary"><RefreshCw size={16} /></button>
       </div>
 
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {[
+          { label: 'Total Assets', value: assets.length, color: 'text-blue-600' },
+          { label: 'Active', value: assets.filter(a => a.status === 'active').length, color: 'text-green-600' },
+          { label: 'Agent Discovered', value: assets.filter(a => a.asset_tag?.startsWith('AGT-')).length, color: 'text-purple-600', icon: Bot },
+          { label: 'In Warranty', value: assets.filter(a => warrantyState(a) === 'in').length, color: 'text-emerald-600' },
+          { label: 'End of Life', value: assets.filter(a => a.is_eol).length, color: 'text-red-600' },
+        ].map(s => (
+          <div key={s.label} className="card p-3">
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">{s.label}</p>
+            <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="table-header w-8"></th>
                 <th className="table-header">Asset</th>
                 <th className="table-header">Type</th>
-                <th className="table-header">Manufacturer</th>
-                <th className="table-header">Assigned To</th>
-                <th className="table-header">Location</th>
+                <th className="table-header">OS / Specs</th>
+                <th className="table-header">Network</th>
                 <th className="table-header">Status</th>
-                <th className="table-header">Condition</th>
                 <th className="table-header">Warranty</th>
+                <th className="table-header">Source</th>
                 <th className="table-header">Actions</th>
               </tr>
             </thead>
@@ -139,70 +280,7 @@ export default function HardwareAssets() {
               ) : assets.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-12 text-gray-400">No assets found</td></tr>
               ) : assets.map(a => (
-                <tr key={a.id} className="table-row">
-                  <td className="table-cell">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{a.name}</p>
-                      <p className="text-xs text-gray-400 font-mono">{a.asset_tag}</p>
-                    </div>
-                  </td>
-                  <td className="table-cell"><Badge variant="info">{a.type}</Badge></td>
-                  <td className="table-cell">
-                    <p className="text-gray-700 dark:text-gray-300">{a.manufacturer}</p>
-                    <p className="text-xs text-gray-400">{a.model}</p>
-                  </td>
-                  <td className="table-cell">{a.assigned_to || <span className="text-gray-400">Unassigned</span>}</td>
-                  <td className="table-cell text-gray-500">{a.location || '—'}</td>
-                  <td className="table-cell"><Badge variant={statusVariant[a.status] || 'default'}>{a.status?.replace('_', ' ')}</Badge></td>
-                  <td className="table-cell"><Badge variant={conditionVariant[a.condition] || 'default'}>{a.condition}</Badge></td>
-                  <td className="table-cell">
-                    <div className="space-y-1">
-                      {a.is_eol ? (
-                        <div className="flex items-center gap-1.5">
-                          <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
-                          <span className="text-xs font-semibold text-red-400">End of Life</span>
-                        </div>
-                      ) : null}
-                      {a.warranty_expiry ? (() => {
-                        const ws = warrantyState(a)
-                        const colors = { in: 'text-green-400', expiring: 'text-yellow-400', out: 'text-red-400' }
-                        const icons  = { in: ShieldCheck, expiring: ShieldOff, out: ShieldOff }
-                        const Icon = icons[ws] || ShieldOff
-                        return (
-                          <div className="flex items-center gap-1.5">
-                            <Icon size={13} className={colors[ws] || 'text-gray-400'} />
-                            <div>
-                              <span className={`text-xs font-medium ${colors[ws] || 'text-gray-400'}`}>
-                                {ws === 'in' ? 'In Warranty' : ws === 'expiring' ? 'Expiring Soon' : 'Out of Warranty'}
-                              </span>
-                              <p className="text-xs text-gray-500">{new Date(a.warranty_expiry).toLocaleDateString()}</p>
-                            </div>
-                          </div>
-                        )
-                      })() : <span className="text-gray-600 text-xs">No warranty</span>}
-                      {a.eol_replacement && (
-                        <p className="text-xs text-blue-400 truncate max-w-[140px]">→ {a.eol_replacement}</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="table-cell">
-                    <div className="flex gap-1">
-                      <a
-                        href="https://app.sclera.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Monitor in Sclera"
-                        className="p-1.5 rounded hover:bg-blue-900/30 text-gray-500 hover:text-blue-400 transition-colors"
-                      >
-                        <Monitor size={15} />
-                      </a>
-                      {canEdit && <>
-                        <button onClick={() => openEdit(a)} className="p-1.5 rounded hover:bg-gray-700/50 text-gray-500 hover:text-blue-400 transition-colors"><Edit size={15} /></button>
-                        <button onClick={() => handleDelete(a.id)} className="p-1.5 rounded hover:bg-gray-700/50 text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={15} /></button>
-                      </>}
-                    </div>
-                  </td>
-                </tr>
+                <HardwareRow key={a.id} asset={a} canEdit={canEdit} onEdit={openEdit} onDelete={handleDelete} />
               ))}
             </tbody>
           </table>
