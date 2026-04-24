@@ -56,13 +56,30 @@ function getConnectedM365() {
   return db.prepare("SELECT * FROM cloud_integrations WHERE name='Microsoft 365' AND status='connected'").get();
 }
 
-// SKU friendly names
+// SKU friendly names and per-user/month retail pricing (USD)
 const SKU_NAMES = {
   SPB: 'Microsoft 365 Business Premium', O365_BUSINESS_PREMIUM: 'Microsoft 365 Business Standard',
   FLOW_FREE: 'Power Automate Free', POWER_BI_STANDARD: 'Power BI Free',
   POWERAPPS_DEV: 'Power Apps Developer', AAD_PREMIUM_P2: 'Entra ID P2',
   INTUNE_A_D: 'Intune Device', RMSBASIC: 'Azure RMS Basic',
   'Teams_Premium_(for_Departments)': 'Teams Premium', 'Power_Pages_vTrial_for_Makers': 'Power Pages Trial',
+  ENTERPRISEPACK: 'Office 365 E3', ENTERPRISEPREMIUM: 'Office 365 E5',
+  'Microsoft_365_E3': 'Microsoft 365 E3', 'Microsoft_365_E5': 'Microsoft 365 E5',
+  O365_BUSINESS_ESSENTIALS: 'Microsoft 365 Business Basic',
+  EXCHANGESTANDARD: 'Exchange Online Plan 1', EXCHANGEENTERPRISE: 'Exchange Online Plan 2',
+  VISIOCLIENT: 'Visio Plan 2', PROJECTPREMIUM: 'Project Plan 5',
+  EMS_E5: 'Enterprise Mobility + Security E5', EMS_E3: 'Enterprise Mobility + Security E3',
+};
+
+const SKU_PRICES = {
+  SPB: 22.00, O365_BUSINESS_PREMIUM: 12.50, FLOW_FREE: 0, POWER_BI_STANDARD: 0,
+  POWERAPPS_DEV: 0, AAD_PREMIUM_P2: 9.00, INTUNE_A_D: 2.00, RMSBASIC: 0,
+  'Teams_Premium_(for_Departments)': 10.00, 'Power_Pages_vTrial_for_Makers': 0,
+  ENTERPRISEPACK: 23.00, ENTERPRISEPREMIUM: 38.00,
+  'Microsoft_365_E3': 36.00, 'Microsoft_365_E5': 57.00,
+  O365_BUSINESS_ESSENTIALS: 6.00, EXCHANGESTANDARD: 4.00, EXCHANGEENTERPRISE: 8.00,
+  VISIOCLIENT: 15.00, PROJECTPREMIUM: 55.00,
+  EMS_E5: 16.00, EMS_E3: 10.90,
 };
 
 // ── SaaS Discovery — real SKUs from M365 ──────────────────────────────────────
@@ -74,18 +91,24 @@ router.get('/discovered-apps', authenticate, async (req, res) => {
 
     const token = await getM365Token(m365);
     const skus = await graphGet('https://graph.microsoft.com/v1.0/subscribedSkus', token);
-    const data = (skus.value || []).map((s, i) => ({
-      id: i + 1,
-      name: SKU_NAMES[s.skuPartNumber] || s.skuPartNumber.replace(/_/g, ' '),
-      sku: s.skuPartNumber,
-      category: 'SaaS',
-      source: 'Microsoft 365',
-      url: 'https://admin.microsoft.com',
-      detected_users: s.consumedUnits || 0,
-      total_seats: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
-      monthly_cost: 0,
-      is_sanctioned: 1,
-    }));
+    const data = (skus.value || []).map((s, i) => {
+      const pricePerUser = SKU_PRICES[s.skuPartNumber] ?? null;
+      const consumed = s.consumedUnits || 0;
+      return {
+        id: i + 1,
+        name: SKU_NAMES[s.skuPartNumber] || s.skuPartNumber.replace(/_/g, ' '),
+        sku: s.skuPartNumber,
+        category: 'SaaS',
+        source: 'Microsoft 365',
+        url: 'https://admin.microsoft.com',
+        detected_users: consumed,
+        total_seats: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
+        price_per_user: pricePerUser,
+        monthly_cost: pricePerUser !== null ? pricePerUser * consumed : null,
+        total_cost: pricePerUser !== null ? pricePerUser * (s.prepaidUnits ? s.prepaidUnits.enabled : 0) : null,
+        is_sanctioned: 1,
+      };
+    });
     res.json({ data, total: data.length });
   } catch (err) {
     console.error('discovered-apps error:', err.message);
@@ -137,7 +160,7 @@ router.get('/reclamation', authenticate, async (req, res) => {
           user_email: u.mail || u.userPrincipalName,
           last_used: null,
           days_inactive: 999,
-          license_cost: u.assignedLicenses.length * 12.50,
+          license_cost: u.assignedLicenses.length * 15.00,
           status: 'pending',
           action_taken: null,
           savings: 0,
@@ -158,7 +181,7 @@ router.get('/reclamation', authenticate, async (req, res) => {
             user_email: u.mail || u.userPrincipalName,
             last_used: lastSignIn.split('T')[0],
             days_inactive: daysSince,
-            license_cost: u.assignedLicenses.length * 12.50,
+            license_cost: u.assignedLicenses.length * 15.00,
             status: daysSince > 90 ? 'pending' : 'in_review',
             action_taken: null,
             savings: 0,
@@ -326,15 +349,25 @@ router.get('/summary', authenticate, async (req, res) => {
     const unusedSeats = totalSeats - consumedSeats;
     const disabledWithLicenses = (sd.total_users || 0) - (sd.enabled_users || 0);
 
+    // Calculate total monthly cost from SKU prices
+    const totalMonthlyCost = skus.reduce((sum, s) => {
+      const price = SKU_PRICES[s.name] ?? 0;
+      return sum + (price * (s.consumed || 0));
+    }, 0);
+    const totalCommittedCost = skus.reduce((sum, s) => {
+      const price = SKU_PRICES[s.name] ?? 0;
+      return sum + (price * (s.enabled || 0));
+    }, 0);
+
     res.json({
       discovered_apps: totalSkus,
       unsanctioned_apps: 0,
       reclaim_candidates: disabledWithLicenses,
-      potential_savings: disabledWithLicenses * 12.50,
+      potential_savings: disabledWithLicenses * 15.00,
       shadow_it_high_risk: disabledWithLicenses,
       cloud_resources: totalSkus,
-      cloud_monthly_cost: 0,
-      // Extra fields for richer summary
+      cloud_monthly_cost: totalMonthlyCost,
+      total_committed_cost: totalCommittedCost,
       total_users: sd.total_users || 0,
       enabled_users: sd.enabled_users || 0,
       licensed_users: sd.licensed_users || 0,

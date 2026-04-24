@@ -31,7 +31,7 @@ function DiscoveredApps({ canManage }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="card p-4 text-center">
           <p className="text-2xl font-bold text-blue-600">{apps.length}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">License SKUs</p>
@@ -47,6 +47,10 @@ function DiscoveredApps({ canManage }) {
         <div className="card p-4 text-center">
           <p className="text-2xl font-bold text-purple-600">{(totalSeats - totalConsumed).toLocaleString()}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Available Seats</p>
+        </div>
+        <div className="card p-4 text-center">
+          <p className="text-2xl font-bold text-green-600">${apps.reduce((s, a) => s + (a.monthly_cost || 0), 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Monthly Spend</p>
         </div>
       </div>
 
@@ -67,15 +71,16 @@ function DiscoveredApps({ canManage }) {
                 <th className="table-header">Source</th>
                 <th className="table-header">Consumed</th>
                 <th className="table-header">Total Seats</th>
-                <th className="table-header">Available</th>
+                <th className="table-header">$/User/Mo</th>
+                <th className="table-header">Monthly Cost</th>
                 <th className="table-header">Usage</th>
               </tr>
             </thead>
             <tbody>
               {loading
-                ? <tr><td colSpan={6} className="text-center py-10 text-gray-400">Loading from connected integrations...</td></tr>
+                ? <tr><td colSpan={7} className="text-center py-10 text-gray-400">Loading from connected integrations...</td></tr>
                 : filtered.length === 0
-                  ? <tr><td colSpan={6} className="text-center py-10 text-gray-400">No license SKUs found. Connect an integration first.</td></tr>
+                  ? <tr><td colSpan={7} className="text-center py-10 text-gray-400">No license SKUs found. Connect an integration first.</td></tr>
                   : filtered.map(a => {
                     const pct = a.total_seats > 0 ? Math.round((a.detected_users / a.total_seats) * 100) : 0
                     const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-green-500'
@@ -88,10 +93,13 @@ function DiscoveredApps({ canManage }) {
                         <td className="table-cell"><Badge variant="info">{a.source}</Badge></td>
                         <td className="table-cell font-bold text-gray-900 dark:text-white">{a.detected_users.toLocaleString()}</td>
                         <td className="table-cell text-gray-600 dark:text-gray-400">{a.total_seats.toLocaleString()}</td>
+                        <td className="table-cell text-gray-600 dark:text-gray-400">
+                          {a.price_per_user !== null ? `$${a.price_per_user.toFixed(2)}` : <span className="text-gray-400">Free</span>}
+                        </td>
                         <td className="table-cell">
-                          <span className={a.total_seats - a.detected_users <= 0 ? 'text-red-600 font-bold' : 'text-green-600 font-medium'}>
-                            {(a.total_seats - a.detected_users).toLocaleString()}
-                          </span>
+                          {a.monthly_cost !== null && a.monthly_cost > 0
+                            ? <span className="font-semibold text-green-600">${a.monthly_cost.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                            : <span className="text-gray-400">$0</span>}
                         </td>
                         <td className="table-cell">
                           <div className="flex items-center gap-2">
@@ -490,7 +498,7 @@ export default function CloudIntelligence() {
               <span className="text-xs text-gray-400">via Microsoft 365</span>
             </div>
           )}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {[
               { label: 'License SKUs', value: summary.discovered_apps, color: 'text-blue-600' },
               { label: 'Total Users', value: (summary.total_users || 0).toLocaleString(), color: 'text-purple-600' },
@@ -498,6 +506,7 @@ export default function CloudIntelligence() {
               { label: 'Total Seats', value: (summary.total_license_seats || 0).toLocaleString(), color: 'text-blue-600' },
               { label: 'Seats Used', value: (summary.consumed_license_seats || 0).toLocaleString(), color: 'text-yellow-600' },
               { label: 'Unused Seats', value: (summary.unused_license_seats || 0).toLocaleString(), color: 'text-red-600' },
+              { label: 'Monthly Spend', value: `$${(summary.cloud_monthly_cost || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}`, color: 'text-green-600' },
               { label: 'Reclaim Candidates', value: summary.reclaim_candidates, color: 'text-orange-600' },
             ].map(s => (
               <div key={s.label} className="card p-3 text-center">
