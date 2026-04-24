@@ -24,6 +24,7 @@ const ALL_WIDGETS = [
   { id: 'wasted_licenses',  label: 'Underutilized Licenses', desc: 'Licenses costing money but unused' },
   { id: 'expiring_assets',  label: 'Expiring Assets',     desc: 'High-cost assets expiring soon' },
   { id: 'hardware_charts',  label: 'Hardware Charts',     desc: 'Hardware by status and value' },
+  { id: 'cloud_infra',      label: 'Cloud Infrastructure', desc: 'Real-time cloud resources from integrations' },
   { id: 'recent_activity',  label: 'Recent Activity',     desc: 'Latest audit log entries' },
 ]
 
@@ -191,7 +192,7 @@ export default function Dashboard() {
       {/* ── Operational KPIs ── */}
       {show('operational_kpis') && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatsCard title="Cloud Integrations" value={stats?.connectedIntegrations || 0} subtitle="Connected apps" icon={Cloud} color="blue" />
+          <StatsCard title="Cloud Integrations" value={stats?.connectedIntegrations || 0} subtitle={stats?.cloud?.providers?.length ? stats.cloud.providers.join(', ') : 'Connected apps'} icon={Cloud} color="blue" />
           <StatsCard title="Expiring Licenses" value={stats?.expiringLicenses || 0} subtitle="Within 90 days" icon={AlertTriangle} color="yellow" />
           <StatsCard title="License Utilization" value={`${stats?.licenseCompliance || 0}%`} subtitle="Across all software" icon={TrendingUp} color="green" />
           <StatsCard title="Active Contracts" value={`$${((stats?.totalContractValue || 0) / 1000).toFixed(0)}K`} subtitle={`${stats?.expiringContracts || 0} expiring soon`} icon={DollarSign} color="purple" />
@@ -402,6 +403,41 @@ export default function Dashboard() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cloud Infrastructure ── */}
+      {show('cloud_infra') && stats?.cloud && stats.cloud.providers.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+              <Cloud size={16} className="text-blue-400" /> Cloud Infrastructure
+            </h3>
+            <div className="flex items-center gap-2">
+              {stats.cloud.providers.map(p => (
+                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400 border border-blue-700/30">{p}</span>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'EC2 Instances',    value: stats.cloud.resources.ec2,          color: 'text-orange-400', bg: 'bg-orange-900/20', show: stats.cloud.resources.ec2 > 0 },
+              { label: 'S3 Buckets',       value: stats.cloud.resources.s3,           color: 'text-green-400',  bg: 'bg-green-900/20',  show: stats.cloud.resources.s3 > 0 },
+              { label: 'IAM Users',        value: stats.cloud.resources.iamUsers,     color: 'text-purple-400', bg: 'bg-purple-900/20', show: stats.cloud.resources.iamUsers > 0 },
+              { label: 'IAM Roles',        value: stats.cloud.resources.iamRoles,     color: 'text-cyan-400',   bg: 'bg-cyan-900/20',   show: stats.cloud.resources.iamRoles > 0 },
+              { label: 'M365 Users',       value: stats.cloud.resources.m365Users,    color: 'text-blue-400',   bg: 'bg-blue-900/20',   show: stats.cloud.resources.m365Users > 0 },
+              { label: 'M365 Licenses',    value: stats.cloud.resources.m365Licenses, color: 'text-indigo-400', bg: 'bg-indigo-900/20', show: stats.cloud.resources.m365Licenses > 0 },
+            ].filter(r => r.show).map(r => (
+              <div key={r.label} className={`rounded-xl p-4 ${r.bg}`}>
+                <p className={`text-2xl font-bold ${r.color}`}>{r.value}</p>
+                <p className="text-xs font-medium text-gray-300 mt-1">{r.label}</p>
+              </div>
+            ))}
+            <div className="rounded-xl p-4 bg-green-900/20">
+              <p className="text-2xl font-bold text-green-400">${(stats.cloud.totalCloudCost || 0).toLocaleString()}</p>
+              <p className="text-xs font-medium text-gray-300 mt-1">Est. Monthly Cost</p>
+            </div>
           </div>
         </div>
       )}

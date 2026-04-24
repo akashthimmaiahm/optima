@@ -9,15 +9,28 @@ const { authorize } = require('../middleware/rbac');
 
 // Estimated on-demand monthly cost per EC2 instance type (USD, us-east-1, 730 hrs/mo)
 const EC2_MONTHLY_COST = {
-  't2.nano': 4.18, 't2.micro': 8.35, 't2.small': 16.79, 't2.medium': 33.58, 't2.large': 67.16, 't2.xlarge': 134.32,
-  't3.nano': 3.80, 't3.micro': 7.59, 't3.small': 15.18, 't3.medium': 30.37, 't3.large': 60.74, 't3.xlarge': 121.47,
-  't3a.nano': 3.43, 't3a.micro': 6.86, 't3a.small': 13.72, 't3a.medium': 27.45, 't3a.large': 54.90,
+  't2.nano': 4.18, 't2.micro': 8.35, 't2.small': 16.79, 't2.medium': 33.58, 't2.large': 67.16, 't2.xlarge': 134.32, 't2.2xlarge': 268.64,
+  't3.nano': 3.80, 't3.micro': 7.59, 't3.small': 15.18, 't3.medium': 30.37, 't3.large': 60.74, 't3.xlarge': 121.47, 't3.2xlarge': 242.94,
+  't3a.nano': 3.43, 't3a.micro': 6.86, 't3a.small': 13.72, 't3a.medium': 27.45, 't3a.large': 54.90, 't3a.xlarge': 109.79, 't3a.2xlarge': 219.58,
   'm5.large': 70.08, 'm5.xlarge': 140.16, 'm5.2xlarge': 280.32, 'm5.4xlarge': 560.64,
-  'm6i.large': 70.08, 'm6i.xlarge': 140.16, 'm6i.2xlarge': 280.32,
-  'c5.large': 62.05, 'c5.xlarge': 124.10, 'c5.2xlarge': 248.20,
+  'm5a.large': 63.07, 'm5a.xlarge': 126.14, 'm5a.2xlarge': 252.29,
+  'm6i.large': 70.08, 'm6i.xlarge': 140.16, 'm6i.2xlarge': 280.32, 'm6i.4xlarge': 560.64,
+  'm6a.large': 63.07, 'm6a.xlarge': 126.14, 'm6a.2xlarge': 252.29,
+  'm7i.large': 73.58, 'm7i.xlarge': 147.17, 'm7i.2xlarge': 294.34,
+  'c5.large': 62.05, 'c5.xlarge': 124.10, 'c5.2xlarge': 248.20, 'c5.4xlarge': 496.40,
+  'c5a.large': 55.84, 'c5a.xlarge': 111.69,
+  'c6i.large': 62.05, 'c6i.xlarge': 124.10, 'c6i.2xlarge': 248.20,
+  'c6a.large': 55.84, 'c6a.xlarge': 111.69,
+  'c7i.large': 65.12, 'c7i.xlarge': 130.24,
   'r5.large': 91.98, 'r5.xlarge': 183.96, 'r5.2xlarge': 367.92,
-  'c6i.large': 62.05, 'c6i.xlarge': 124.10, 'r6i.large': 91.98,
-  'm7i.large': 73.58, 'c7i.large': 65.12,
+  'r5a.large': 82.78, 'r5a.xlarge': 165.57,
+  'r6i.large': 91.98, 'r6i.xlarge': 183.96,
+  'r6a.large': 82.78, 'r6a.xlarge': 165.57,
+  'a1.medium': 18.62, 'a1.large': 37.23, 'a1.xlarge': 74.46,
+  'g4dn.xlarge': 383.25, 'g4dn.2xlarge': 546.25, 'g5.xlarge': 779.34,
+  'p3.2xlarge': 2233.66,
+  'i3.large': 114.10, 'i3.xlarge': 228.20,
+  'd2.xlarge': 506.33,
 };
 const S3_MONTHLY_ESTIMATE = 2.30; // ~100GB at $0.023/GB
 
@@ -292,7 +305,20 @@ router.get('/cloud-resources', authenticate, async (req, res) => {
       if (providerFilter && provider !== providerFilter) continue;
 
       if (integ.name === 'Microsoft 365' || integ.name === 'Microsoft Intune') {
-        const skus = sd.skus || [];
+        // Fetch live SKU data from Microsoft Graph
+        let skus = [];
+        try {
+          const token = await getM365Token(integ);
+          const skuResp = await graphGet('https://graph.microsoft.com/v1.0/subscribedSkus', token);
+          skus = (skuResp.value || []).map(s => ({
+            name: s.skuPartNumber,
+            consumed: s.consumedUnits || 0,
+            enabled: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
+          }));
+        } catch (e) {
+          console.error('M365 cloud-resources live fetch failed, falling back to sync_details:', e.message);
+          skus = sd.skus || [];
+        }
         for (const s of skus) {
           id++;
           const price = SKU_PRICES[s.name] ?? 0;
@@ -310,7 +336,7 @@ router.get('/cloud-resources', authenticate, async (req, res) => {
             enabled: s.enabled || 0,
             software_installed: s.name,
             integration_name: integ.name,
-            last_scanned: integ.last_sync,
+            last_scanned: new Date().toISOString(),
           });
         }
       } else if (integ.name === 'AWS IAM') {
@@ -567,13 +593,25 @@ router.get('/summary', authenticate, async (req, res) => {
       const sd = getIntegrationSyncDetails(integ);
 
       if (integ.name === 'Microsoft 365' || integ.name === 'Microsoft Intune') {
-        const skus = sd.skus || [];
+        // Fetch live SKU data for accurate cost
+        let skus = sd.skus || [];
+        try {
+          const token = await getM365Token(integ);
+          const skuResp = await graphGet('https://graph.microsoft.com/v1.0/subscribedSkus', token);
+          skus = (skuResp.value || []).map(s => ({
+            name: s.skuPartNumber,
+            consumed: s.consumedUnits || 0,
+            enabled: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
+          }));
+        } catch (e) {
+          console.error('M365 summary live fetch failed, using sync_details:', e.message);
+        }
         discoveredApps += skus.length;
         totalUsers += sd.total_users || 0;
         enabledUsers += sd.enabled_users || 0;
         licensedUsers += sd.licensed_users || 0;
-        totalLicenseSeats += sd.total_license_seats || 0;
-        consumedLicenseSeats += sd.consumed_license_seats || 0;
+        totalLicenseSeats += skus.reduce((sum, s) => sum + (s.enabled || 0), 0) || sd.total_license_seats || 0;
+        consumedLicenseSeats += skus.reduce((sum, s) => sum + (s.consumed || 0), 0) || sd.consumed_license_seats || 0;
         reclaimCandidates += (sd.total_users || 0) - (sd.enabled_users || 0);
         orgName = orgName || sd.org_name || null;
         cloudResources += skus.length;
@@ -582,16 +620,30 @@ router.get('/summary', authenticate, async (req, res) => {
         totalCommittedCost += skus.reduce((sum, s) => sum + ((SKU_PRICES[s.name] ?? 0) * (s.enabled || 0)), 0);
         providers.push('Microsoft');
       } else if (integ.name === 'AWS IAM') {
-        const ec2Count = sd.total_ec2_instances || 0;
-        const s3Count = sd.total_s3_buckets || 0;
-        const iamUserCount = sd.total_iam_users || 0;
-        const iamRoleCount = sd.total_iam_roles || 0;
-        const iamPolicyCount = sd.total_iam_policies || 0;
+        const ec2Instances = sd.ec2_instances || [];
+        const s3Buckets = sd.s3_buckets || [];
+        const ec2Count = ec2Instances.length || sd.total_ec2_instances || 0;
+        const s3Count = s3Buckets.length || sd.total_s3_buckets || 0;
+        const iamUserCount = (sd.iam_users || []).length || sd.total_iam_users || 0;
+        const iamRoleCount = (sd.iam_roles || []).length || sd.total_iam_roles || 0;
+        const iamPolicyCount = (sd.iam_policies || []).length || sd.total_iam_policies || 0;
 
         discoveredApps += iamPolicyCount;
         cloudResources += ec2Count + s3Count + iamUserCount + iamRoleCount;
         totalUsers += iamUserCount;
         enabledUsers += iamUserCount;
+
+        // Calculate AWS monthly cost from EC2 running instances + S3 buckets
+        let awsMonthlyCost = 0;
+        for (const inst of ec2Instances) {
+          if (inst.state === 'running') {
+            awsMonthlyCost += EC2_MONTHLY_COST[inst.type] || EC2_MONTHLY_COST[inst.instance_type] || 50;
+          }
+        }
+        awsMonthlyCost += s3Count * S3_MONTHLY_ESTIMATE;
+        cloudMonthlyCost += awsMonthlyCost;
+        totalCommittedCost += awsMonthlyCost;
+
         providers.push('Amazon');
       } else {
         // Generic integration

@@ -32,10 +32,53 @@ router.get('/stats', authenticate, (req, res) => {
     SELECT SUM(purchase_cost) as total FROM hardware_assets WHERE status != 'retired' AND status != 'disposed'
   `).get().total || 0;
 
-  // Monthly cloud infrastructure cost
+  // Monthly cloud infrastructure cost — read from connected integrations' sync_details
   let cloudCost = 0;
+  let cloudResources = { ec2: 0, s3: 0, iamUsers: 0, iamRoles: 0, m365Users: 0, m365Licenses: 0 };
+  let cloudProviders = [];
   try {
-    cloudCost = db.prepare('SELECT SUM(monthly_cost) as total FROM cloud_resources').get().total || 0;
+    const integrations = db.prepare("SELECT * FROM cloud_integrations WHERE status='connected'").all();
+    for (const integ of integrations) {
+      let config = {};
+      try { config = typeof integ.config === 'string' ? JSON.parse(integ.config) : (integ.config || {}); } catch {}
+      const sd = config.sync_details || {};
+      const providerName = integ.name || integ.provider || 'Unknown';
+
+      if (providerName.includes('AWS') || providerName.includes('Amazon')) {
+        cloudProviders.push('AWS');
+        const ec2s = sd.ec2_instances || [];
+        const s3s = sd.s3_buckets || [];
+        cloudResources.ec2 += ec2s.length;
+        cloudResources.s3 += s3s.length;
+        cloudResources.iamUsers += (sd.iam_users || []).length;
+        cloudResources.iamRoles += (sd.iam_roles || []).length;
+        // EC2 cost estimation
+        const EC2_COST = {
+          't2.nano': 4.18, 't2.micro': 8.35, 't2.small': 16.79, 't2.medium': 33.58, 't2.large': 67.16,
+          't3.nano': 3.80, 't3.micro': 7.59, 't3.small': 15.18, 't3.medium': 30.37, 't3.large': 60.74,
+          'm5.large': 70.08, 'm5.xlarge': 140.16, 'm5.2xlarge': 280.32,
+          'm6i.large': 70.08, 'm6i.xlarge': 140.16, 'c5.large': 62.05, 'c5.xlarge': 124.10,
+          'r5.large': 91.98, 'r5.xlarge': 183.96, 'c6i.large': 62.05, 'm7i.large': 73.58,
+        };
+        for (const inst of ec2s) {
+          if (inst.state === 'running') {
+            cloudCost += EC2_COST[inst.instance_type] || 50;
+          }
+        }
+        cloudCost += s3s.length * 2.30; // S3 estimate
+      } else if (providerName.includes('Microsoft') || providerName.includes('M365') || providerName.includes('365')) {
+        cloudProviders.push('Microsoft 365');
+        const users = sd.users || [];
+        const licenses = sd.subscribed_skus || [];
+        cloudResources.m365Users += users.length;
+        cloudResources.m365Licenses += licenses.reduce((s, l) => s + (l.consumedUnits || 0), 0);
+        // M365 cost estimate: ~$12.50/user/month average
+        cloudCost += users.filter(u => u.accountEnabled !== false).length * 12.50;
+      } else {
+        cloudProviders.push(providerName);
+      }
+    }
+    cloudProviders = [...new Set(cloudProviders)];
   } catch (e) {}
 
   // Wasted license spend — underutilized (< 50% used) with cost
@@ -131,6 +174,12 @@ router.get('/stats', authenticate, (req, res) => {
       hardwareCostByType,
       wastedLicenses,
       expiringCostlyAssets,
+    },
+    // Cloud integration details
+    cloud: {
+      providers: cloudProviders,
+      resources: cloudResources,
+      totalCloudCost: cloudCost,
     },
   });
 });
