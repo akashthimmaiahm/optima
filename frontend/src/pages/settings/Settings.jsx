@@ -247,8 +247,20 @@ function BackupRestore() {
     setCreating(false)
   }
 
-  const downloadBackup = (filename) => {
-    window.open(`${api.defaults.baseURL}/backup/download/${filename}`, '_blank')
+  const downloadBackup = async (filename) => {
+    try {
+      const res = await api.get(`/backup/download/${filename}`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Download failed' })
+    }
   }
 
   const deleteBackup = async (filename) => {
