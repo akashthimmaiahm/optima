@@ -4,6 +4,24 @@ const { getDb } = require('../database/init');
 const { authenticate } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
 
+// Add a new integration from catalog
+router.post('/', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
+  const db = getDb();
+  const { name, provider, type, api_endpoint, auth_type } = req.body;
+  if (!name || !provider || !type) return res.status(400).json({ error: 'name, provider, type required' });
+  try {
+    const r = db.prepare(
+      `INSERT INTO cloud_integrations (name, provider, type, status, api_endpoint, auth_type, sync_frequency) VALUES (?,?,?,'disconnected',?,?,'daily')`
+    ).run(name, provider, type, api_endpoint || '', auth_type || 'oauth2');
+    const row = db.prepare('SELECT * FROM cloud_integrations WHERE id=?').get(r.lastInsertRowid);
+    try { row.config = row.config ? JSON.parse(row.config) : {} } catch { row.config = {} }
+    res.status(201).json(row);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Integration already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/', authenticate, (req, res) => {
   const db = getDb();
   const integrations = db.prepare('SELECT * FROM cloud_integrations ORDER BY name').all();
