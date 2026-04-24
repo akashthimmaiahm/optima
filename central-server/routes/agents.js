@@ -47,92 +47,113 @@ router.get('/:platform/install', (req, res) => {
 
 // ── Windows .bat installer (self-contained batch that launches PowerShell inline) ─
 function generateWindowsBat(propertyKey, serverUrl) {
-  // .bat wrapper: elevates to admin via PowerShell, then runs the embedded PS script
-  return `@echo off
-:: ============================================================================
-:: Optima Agent Installer for Windows (Auto-generated)
-:: Right-click > Run as Administrator, or open CMD as Admin and run this file.
-:: ============================================================================
-NET SESSION >nul 2>&1
-if %errorlevel% neq 0 (
-    echo.
-    echo   [ERROR] Please run this file as Administrator.
-    echo   Right-click the file and select "Run as administrator".
-    echo.
-    pause
-    exit /b 1
-)
-
-echo.
-echo   ====================================================
-echo     Optima Agent Installer for Windows
-echo   ====================================================
-echo.
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-$ErrorActionPreference = 'Stop'; ^
-$PropertyKey = '${propertyKey}'; ^
-$ServerUrl = '${serverUrl}'; ^
-$AgentDir = 'C:\\Program Files\\Optima\\agent'; ^
-Write-Host '  Validating property key...' -ForegroundColor Yellow; ^
-try { ^
-  $body = @{ property_key = $PropertyKey } ^| ConvertTo-Json; ^
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
-  try { $resp = Invoke-RestMethod -Uri \\"$ServerUrl/api/portal/verify-key\\" -Method POST -Body $body -ContentType 'application/json' -SkipCertificateCheck -ErrorAction Stop } catch { $resp = Invoke-RestMethod -Uri \\"$ServerUrl/api/portal/verify-key\\" -Method POST -Body $body -ContentType 'application/json' -ErrorAction Stop }; ^
-  Write-Host \\"  Property: $($resp.property.name)\\" -ForegroundColor Green; ^
-  Write-Host \\"  Plan    : $($resp.property.plan)\\" -ForegroundColor Green; ^
-} catch { ^
-  Write-Host '  ERROR: Invalid property key or cannot reach server.' -ForegroundColor Red; ^
-  Read-Host '  Press Enter to exit'; exit 1 ^
-}; ^
-Write-Host ''; ^
-Write-Host '  Checking Node.js...' -ForegroundColor Yellow; ^
-$node = Get-Command node -ErrorAction SilentlyContinue; ^
-if (-not $node) { ^
-  Write-Host '  Installing Node.js 20 LTS (this may take a minute)...' -ForegroundColor Yellow; ^
-  $nodeUrl = 'https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi'; ^
-  $msi = \\"$env:TEMP\\node-install.msi\\"; ^
-  Invoke-WebRequest -Uri $nodeUrl -OutFile $msi -UseBasicParsing; ^
-  Start-Process msiexec.exe -Wait -ArgumentList \\"/i `\\"$msi`\\" /quiet /norestart\\"; ^
-  $env:PATH += ';C:\\Program Files\\nodejs'; ^
-  Write-Host '  Node.js installed.' -ForegroundColor Green ^
-} else { ^
-  Write-Host \\"  Node.js: $(node --version)\\" -ForegroundColor Green ^
-}; ^
-Write-Host ''; ^
-Write-Host '  Downloading agent files...' -ForegroundColor Yellow; ^
-New-Item -ItemType Directory -Path $AgentDir -Force ^| Out-Null; ^
-try { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/agent.js\\" -OutFile \\"$AgentDir\\agent.js\\" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/agent.js\\" -OutFile \\"$AgentDir\\agent.js\\" -UseBasicParsing }; ^
-try { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/package.json\\" -OutFile \\"$AgentDir\\package.json\\" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri \\"$ServerUrl/api/agents/package.json\\" -OutFile \\"$AgentDir\\package.json\\" -UseBasicParsing }; ^
-Write-Host '  Writing configuration...' -ForegroundColor Yellow; ^
-$config = @{ property_key = $PropertyKey; server_url = $ServerUrl; agent_id = $null; interval_hours = 24 } ^| ConvertTo-Json; ^
-Set-Content -Path \\"$AgentDir\\config.json\\" -Value $config; ^
-Write-Host '  Installing dependencies...' -ForegroundColor Yellow; ^
-Push-Location $AgentDir; ^
-$npmCmd = Get-Command npm -ErrorAction SilentlyContinue; ^
-if ($npmCmd) { ^& npm install --production --silent 2^>^&1 ^| Out-Null } else { Write-Host '  WARNING: npm not found, skipping dependencies' -ForegroundColor Yellow }; ^
-Pop-Location; ^
-Write-Host '  Creating Scheduled Task...' -ForegroundColor Yellow; ^
-$action = New-ScheduledTaskAction -Execute 'node' -Argument \\"`\\"$AgentDir\\agent.js`\\"\\" -WorkingDirectory $AgentDir; ^
-$trigger1 = New-ScheduledTaskTrigger -AtStartup; ^
-$trigger2 = New-ScheduledTaskTrigger -Daily -At '03:00AM'; ^
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5); ^
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; ^
-Register-ScheduledTask -TaskName 'OptimaAgent' -Action $action -Trigger $trigger1,$trigger2 -Settings $settings -Principal $principal -Description 'Optima HAM/SAM monitoring agent' -Force ^| Out-Null; ^
-Write-Host ''; ^
-Write-Host '  Running initial inventory scan...' -ForegroundColor Yellow; ^
-Start-Process 'node' -ArgumentList \\"`\\"$AgentDir\\agent.js`\\" --once\\" -WorkingDirectory $AgentDir -Wait -NoNewWindow; ^
-Write-Host ''; ^
-Write-Host '  ============================================' -ForegroundColor Green; ^
-Write-Host '    Installation complete!' -ForegroundColor Green; ^
-Write-Host '  ============================================' -ForegroundColor Green; ^
-Write-Host '  Agent runs daily at 03:00 and on startup.' -ForegroundColor Cyan; ^
-Write-Host \\"  Logs: $AgentDir\\agent.log\\" -ForegroundColor Cyan; ^
-Write-Host ''
-
-echo.
-pause
-`;
+  // Build script using string concatenation to avoid backtick issues in template literals
+  var BT = '`'; // PowerShell backtick escape character
+  var DQ = '\\"'; // escaped double-quote for cmd
+  var lines = [
+    '@echo off',
+    ':: ============================================================================',
+    ':: Optima Agent Installer for Windows (Auto-generated)',
+    ':: Right-click ^> Run as Administrator, or open CMD as Admin and run this file.',
+    ':: ============================================================================',
+    'NET SESSION >nul 2>&1',
+    'if %errorlevel% neq 0 (',
+    '    echo.',
+    '    echo   [ERROR] Please run this file as Administrator.',
+    '    echo   Right-click the file and select "Run as administrator".',
+    '    echo.',
+    '    pause',
+    '    exit /b 1',
+    ')',
+    '',
+    'echo.',
+    'echo   ====================================================',
+    'echo     Optima Agent Installer for Windows',
+    'echo   ====================================================',
+    'echo.',
+    '',
+    ':: Write the PowerShell script to a temp file and execute it',
+    'set "PS_SCRIPT=%TEMP%\\optima-install.ps1"',
+    '',
+    '(' ,
+    'echo $ErrorActionPreference = "Stop"',
+    'echo $PropertyKey = "' + propertyKey + '"',
+    'echo $ServerUrl = "' + serverUrl + '"',
+    'echo $AgentDir = "C:\\Program Files\\Optima\\agent"',
+    'echo.',
+    'echo Write-Host ""',
+    'echo Write-Host "  Validating property key..." -ForegroundColor Yellow',
+    'echo try {',
+    'echo     $body = @{ property_key = $PropertyKey } ^| ConvertTo-Json',
+    'echo     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
+    'echo     try { $resp = Invoke-RestMethod -Uri "$ServerUrl/api/portal/verify-key" -Method POST -Body $body -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop } catch { $resp = Invoke-RestMethod -Uri "$ServerUrl/api/portal/verify-key" -Method POST -Body $body -ContentType "application/json" -ErrorAction Stop }',
+    'echo     Write-Host "  Property: $($resp.property.name^)" -ForegroundColor Green',
+    'echo     Write-Host "  Plan    : $($resp.property.plan^)" -ForegroundColor Green',
+    'echo } catch {',
+    'echo     Write-Host "  ERROR: Invalid property key or cannot reach server." -ForegroundColor Red',
+    'echo     Read-Host "  Press Enter to exit"',
+    'echo     exit 1',
+    'echo }',
+    'echo.',
+    'echo Write-Host ""',
+    'echo Write-Host "  Checking Node.js..." -ForegroundColor Yellow',
+    'echo $node = Get-Command node -ErrorAction SilentlyContinue',
+    'echo if (-not $node^) {',
+    'echo     Write-Host "  Installing Node.js 20 LTS..." -ForegroundColor Yellow',
+    'echo     $nodeUrl = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi"',
+    'echo     $msi = "$env:TEMP\\node-install.msi"',
+    'echo     Invoke-WebRequest -Uri $nodeUrl -OutFile $msi -UseBasicParsing',
+    'echo     Start-Process msiexec.exe -Wait -ArgumentList "/i $msi /quiet /norestart"',
+    'echo     $env:PATH += ";C:\\Program Files\\nodejs"',
+    'echo     Write-Host "  Node.js installed." -ForegroundColor Green',
+    'echo } else {',
+    'echo     Write-Host "  Node.js: $(node --version^)" -ForegroundColor Green',
+    'echo }',
+    'echo.',
+    'echo Write-Host ""',
+    'echo Write-Host "  Downloading agent files..." -ForegroundColor Yellow',
+    'echo New-Item -ItemType Directory -Path $AgentDir -Force ^| Out-Null',
+    'echo try { Invoke-WebRequest -Uri "$ServerUrl/api/agents/agent.js" -OutFile "$AgentDir\\agent.js" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri "$ServerUrl/api/agents/agent.js" -OutFile "$AgentDir\\agent.js" -UseBasicParsing }',
+    'echo try { Invoke-WebRequest -Uri "$ServerUrl/api/agents/package.json" -OutFile "$AgentDir\\package.json" -UseBasicParsing -SkipCertificateCheck } catch { Invoke-WebRequest -Uri "$ServerUrl/api/agents/package.json" -OutFile "$AgentDir\\package.json" -UseBasicParsing }',
+    'echo.',
+    'echo Write-Host "  Writing configuration..." -ForegroundColor Yellow',
+    'echo $config = @{ property_key = $PropertyKey; server_url = $ServerUrl; agent_id = $null; interval_hours = 24 } ^| ConvertTo-Json',
+    'echo Set-Content -Path "$AgentDir\\config.json" -Value $config',
+    'echo.',
+    'echo Write-Host "  Installing dependencies..." -ForegroundColor Yellow',
+    'echo Push-Location $AgentDir',
+    'echo $npmCmd = Get-Command npm -ErrorAction SilentlyContinue',
+    'echo if ($npmCmd^) { ^& npm install --production --silent 2^>^&1 ^| Out-Null } else { Write-Host "  WARNING: npm not found" -ForegroundColor Yellow }',
+    'echo Pop-Location',
+    'echo.',
+    'echo Write-Host "  Creating Scheduled Task..." -ForegroundColor Yellow',
+    'echo $action = New-ScheduledTaskAction -Execute "node" -Argument "$AgentDir\\agent.js" -WorkingDirectory $AgentDir',
+    'echo $trigger1 = New-ScheduledTaskTrigger -AtStartup',
+    'echo $trigger2 = New-ScheduledTaskTrigger -Daily -At "03:00AM"',
+    'echo $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2^) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5^)',
+    'echo $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest',
+    'echo Register-ScheduledTask -TaskName "OptimaAgent" -Action $action -Trigger $trigger1,$trigger2 -Settings $settings -Principal $principal -Description "Optima HAM/SAM monitoring agent" -Force ^| Out-Null',
+    'echo.',
+    'echo Write-Host ""',
+    'echo Write-Host "  Running initial inventory scan..." -ForegroundColor Yellow',
+    'echo Start-Process "node" -ArgumentList "$AgentDir\\agent.js --once" -WorkingDirectory $AgentDir -Wait -NoNewWindow',
+    'echo.',
+    'echo Write-Host ""',
+    'echo Write-Host "  ============================================" -ForegroundColor Green',
+    'echo Write-Host "    Installation complete!" -ForegroundColor Green',
+    'echo Write-Host "  ============================================" -ForegroundColor Green',
+    'echo Write-Host "  Agent runs daily at 03:00 and on startup." -ForegroundColor Cyan',
+    'echo Write-Host "  Logs: $AgentDir\\agent.log" -ForegroundColor Cyan',
+    'echo Write-Host ""',
+    ') > "%PS_SCRIPT%"',
+    '',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"',
+    'del "%PS_SCRIPT%" 2>nul',
+    '',
+    'echo.',
+    'pause',
+  ];
+  return lines.join('\r\n') + '\r\n';
 }
 
 // ── Linux / macOS bash installer (self-contained, downloads agent from server) ─
