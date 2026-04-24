@@ -11,7 +11,7 @@ const statusVariant = {
   running: 'success', stopped: 'default', deallocated: 'default', active: 'success'
 }
 
-// ─── SaaS Discovery ────────────────────────────────────────────────────────
+// ─── SaaS Discovery — real SKUs from connected integrations ───────────────
 function DiscoveredApps({ canManage }) {
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,142 +25,90 @@ function DiscoveredApps({ canManage }) {
   }
   useEffect(() => { load() }, [])
 
-  const toggleSanction = async (app) => {
-    await api.put(`/cloud-intelligence/discovered-apps/${app.id}/sanction`, { is_sanctioned: app.is_sanctioned ? 0 : 1 })
-    load()
-  }
-
   const filtered = apps.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()))
-  const sanctioned = filtered.filter(a => a.is_sanctioned)
-  const unsanctioned = filtered.filter(a => !a.is_sanctioned)
+  const totalSeats = apps.reduce((s, a) => s + (a.total_seats || 0), 0)
+  const totalConsumed = apps.reduce((s, a) => s + (a.detected_users || 0), 0)
 
   return (
     <div className="space-y-4">
-      {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="card p-4 text-center">
           <p className="text-2xl font-bold text-blue-600">{apps.length}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Apps Discovered</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">License SKUs</p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-green-600">{apps.filter(a => a.is_sanctioned).length}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Sanctioned</p>
+          <p className="text-2xl font-bold text-green-600">{totalSeats.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total Seats</p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-red-600">{apps.filter(a => !a.is_sanctioned).length}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Unsanctioned</p>
+          <p className="text-2xl font-bold text-yellow-600">{totalConsumed.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Seats Consumed</p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-purple-600">${apps.reduce((s, a) => s + (a.monthly_cost || 0), 0).toLocaleString()}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total Monthly Cost</p>
+          <p className="text-2xl font-bold text-purple-600">{(totalSeats - totalConsumed).toLocaleString()}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Available Seats</p>
         </div>
       </div>
 
       <div className="card p-3 flex gap-3">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
-          <input placeholder="Search apps..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <input placeholder="Search license SKUs..." className="input pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <button onClick={load} className="btn-secondary"><RefreshCw size={15} /></button>
       </div>
 
-      {/* Unsanctioned */}
-      {unsanctioned.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-1.5">
-            <Shield size={14} /> Unsanctioned Applications ({unsanctioned.length})
-          </h3>
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="table-header">Application</th>
-                    <th className="table-header">Category</th>
-                    <th className="table-header">Detected Via</th>
-                    <th className="table-header">Users</th>
-                    <th className="table-header">Monthly Cost</th>
-                    {canManage && <th className="table-header">Action</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {unsanctioned.map(a => (
-                    <tr key={a.id} className="table-row">
-                      <td className="table-cell">
-                        <p className="font-medium text-gray-900 dark:text-white">{a.name}</p>
-                        <p className="text-xs text-gray-400">{a.url}</p>
-                      </td>
-                      <td className="table-cell"><Badge variant="warning">{a.category}</Badge></td>
-                      <td className="table-cell text-xs text-gray-500">{a.source}</td>
-                      <td className="table-cell font-medium text-gray-900 dark:text-white">{a.detected_users}</td>
-                      <td className="table-cell">
-                        {a.monthly_cost > 0
-                          ? <span className="text-red-600 font-medium">${a.monthly_cost.toLocaleString()}</span>
-                          : <span className="text-gray-400">Unknown</span>}
-                      </td>
-                      {canManage && (
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="table-header">License / SKU</th>
+                <th className="table-header">Source</th>
+                <th className="table-header">Consumed</th>
+                <th className="table-header">Total Seats</th>
+                <th className="table-header">Available</th>
+                <th className="table-header">Usage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? <tr><td colSpan={6} className="text-center py-10 text-gray-400">Loading from connected integrations...</td></tr>
+                : filtered.length === 0
+                  ? <tr><td colSpan={6} className="text-center py-10 text-gray-400">No license SKUs found. Connect an integration first.</td></tr>
+                  : filtered.map(a => {
+                    const pct = a.total_seats > 0 ? Math.round((a.detected_users / a.total_seats) * 100) : 0
+                    const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                    return (
+                      <tr key={a.id} className="table-row">
                         <td className="table-cell">
-                          <button onClick={() => toggleSanction(a)} className="btn-secondary text-xs py-1">
-                            <CheckCircle size={12} /> Approve
-                          </button>
+                          <p className="font-medium text-gray-900 dark:text-white">{a.name}</p>
+                          <p className="text-xs text-gray-400">{a.sku}</p>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sanctioned */}
-      {sanctioned.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1.5">
-            <CheckCircle size={14} /> Approved Applications ({sanctioned.length})
-          </h3>
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="table-header">Application</th>
-                    <th className="table-header">Category</th>
-                    <th className="table-header">Detected Via</th>
-                    <th className="table-header">Users</th>
-                    <th className="table-header">Monthly Cost</th>
-                    {canManage && <th className="table-header">Action</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sanctioned.map(a => (
-                    <tr key={a.id} className="table-row">
-                      <td className="table-cell">
-                        <p className="font-medium text-gray-900 dark:text-white">{a.name}</p>
-                        <p className="text-xs text-gray-400">{a.url}</p>
-                      </td>
-                      <td className="table-cell"><Badge variant="info">{a.category}</Badge></td>
-                      <td className="table-cell text-xs text-gray-500">{a.source}</td>
-                      <td className="table-cell font-medium text-gray-900 dark:text-white">{a.detected_users}</td>
-                      <td className="table-cell">{a.monthly_cost > 0 ? `$${a.monthly_cost.toLocaleString()}` : <span className="text-gray-400">—</span>}</td>
-                      {canManage && (
+                        <td className="table-cell"><Badge variant="info">{a.source}</Badge></td>
+                        <td className="table-cell font-bold text-gray-900 dark:text-white">{a.detected_users.toLocaleString()}</td>
+                        <td className="table-cell text-gray-600 dark:text-gray-400">{a.total_seats.toLocaleString()}</td>
                         <td className="table-cell">
-                          <button onClick={() => toggleSanction(a)} className="btn-secondary text-xs py-1 text-red-500">
-                            <XCircle size={12} /> Revoke
-                          </button>
+                          <span className={a.total_seats - a.detected_users <= 0 ? 'text-red-600 font-bold' : 'text-green-600 font-medium'}>
+                            {(a.total_seats - a.detected_users).toLocaleString()}
+                          </span>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                        <td className="table-cell">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500 font-mono">{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+              }
+            </tbody>
+          </table>
         </div>
-      )}
-
-      {loading && <div className="text-center py-10 text-gray-400">Loading...</div>}
+      </div>
     </div>
   )
 }
@@ -534,22 +482,31 @@ export default function CloudIntelligence() {
 
       {/* Top-level summary bar */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          {[
-            { label: 'Apps Found', value: summary.discovered_apps, color: 'text-blue-600' },
-            { label: 'Unsanctioned', value: summary.unsanctioned_apps, color: 'text-red-600' },
-            { label: 'Reclaim Candidates', value: summary.reclaim_candidates, color: 'text-yellow-600' },
-            { label: 'Savings/mo', value: `$${(summary.potential_savings || 0).toFixed(0)}`, color: 'text-green-600' },
-            { label: 'High-Risk Shadow IT', value: summary.shadow_it_high_risk, color: 'text-red-600' },
-            { label: 'Cloud Resources', value: summary.cloud_resources, color: 'text-purple-600' },
-            { label: 'Cloud Cost/mo', value: `$${((summary.cloud_monthly_cost || 0) / 1000).toFixed(1)}K`, color: 'text-blue-600' },
-          ].map(s => (
-            <div key={s.label} className="card p-3 text-center">
-              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{s.label}</p>
+        <>
+          {summary.org_name && (
+            <div className="card p-3 flex items-center gap-2">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Connected to:</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{summary.org_name}</span>
+              <span className="text-xs text-gray-400">via Microsoft 365</span>
             </div>
-          ))}
-        </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[
+              { label: 'License SKUs', value: summary.discovered_apps, color: 'text-blue-600' },
+              { label: 'Total Users', value: (summary.total_users || 0).toLocaleString(), color: 'text-purple-600' },
+              { label: 'Licensed Users', value: (summary.licensed_users || 0).toLocaleString(), color: 'text-green-600' },
+              { label: 'Total Seats', value: (summary.total_license_seats || 0).toLocaleString(), color: 'text-blue-600' },
+              { label: 'Seats Used', value: (summary.consumed_license_seats || 0).toLocaleString(), color: 'text-yellow-600' },
+              { label: 'Unused Seats', value: (summary.unused_license_seats || 0).toLocaleString(), color: 'text-red-600' },
+              { label: 'Reclaim Candidates', value: summary.reclaim_candidates, color: 'text-orange-600' },
+            ].map(s => (
+              <div key={s.label} className="card p-3 text-center">
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Tabs */}

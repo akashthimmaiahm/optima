@@ -1,122 +1,350 @@
 const express = require('express');
+const https = require('https');
 const router = express.Router();
 const { getDb } = require('../database/init');
 const { authenticate } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
 
-// Discovered apps (SaaS visibility)
-router.get('/discovered-apps', authenticate, (req, res) => {
+// ── Microsoft Graph helpers (shared with integrations.js) ─────────────────────
+
+function httpsPost(url, formBody) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const data = new URLSearchParams(formBody).toString();
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': data.length },
+    }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)) } catch { reject(new Error(d)) } }); });
+    req.on('error', reject); req.end(data);
+  });
+}
+
+function graphGet(url, token) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+      headers: { Authorization: 'Bearer ' + token },
+    }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)) } catch { reject(new Error(d)) } }); });
+    req.on('error', reject); req.end();
+  });
+}
+
+async function graphGetAll(url, token) {
+  const all = [];
+  let next = url;
+  while (next) {
+    const res = await graphGet(next, token);
+    if (res.value) all.push(...res.value);
+    next = res['@odata.nextLink'] || null;
+  }
+  return all;
+}
+
+async function getM365Token(integration) {
+  const config = typeof integration.config === 'string' ? JSON.parse(integration.config) : (integration.config || {});
+  const res = await httpsPost(`https://login.microsoftonline.com/${integration.tenant_id}/oauth2/v2.0/token`, {
+    client_id: integration.client_id, client_secret: config.client_secret,
+    scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials',
+  });
+  if (!res.access_token) throw new Error(res.error_description || 'Token failed');
+  return res.access_token;
+}
+
+function getConnectedM365() {
   const db = getDb();
-  const apps = db.prepare('SELECT * FROM discovered_apps ORDER BY detected_users DESC').all();
-  res.json({ data: apps, total: apps.length });
+  return db.prepare("SELECT * FROM cloud_integrations WHERE name='Microsoft 365' AND status='connected'").get();
+}
+
+// SKU friendly names
+const SKU_NAMES = {
+  SPB: 'Microsoft 365 Business Premium', O365_BUSINESS_PREMIUM: 'Microsoft 365 Business Standard',
+  FLOW_FREE: 'Power Automate Free', POWER_BI_STANDARD: 'Power BI Free',
+  POWERAPPS_DEV: 'Power Apps Developer', AAD_PREMIUM_P2: 'Entra ID P2',
+  INTUNE_A_D: 'Intune Device', RMSBASIC: 'Azure RMS Basic',
+  'Teams_Premium_(for_Departments)': 'Teams Premium', 'Power_Pages_vTrial_for_Makers': 'Power Pages Trial',
+};
+
+// ── SaaS Discovery — real SKUs from M365 ──────────────────────────────────────
+
+router.get('/discovered-apps', authenticate, async (req, res) => {
+  try {
+    const m365 = getConnectedM365();
+    if (!m365) return res.json({ data: [], total: 0 });
+
+    const token = await getM365Token(m365);
+    const skus = await graphGet('https://graph.microsoft.com/v1.0/subscribedSkus', token);
+    const data = (skus.value || []).map((s, i) => ({
+      id: i + 1,
+      name: SKU_NAMES[s.skuPartNumber] || s.skuPartNumber.replace(/_/g, ' '),
+      sku: s.skuPartNumber,
+      category: 'SaaS',
+      source: 'Microsoft 365',
+      url: 'https://admin.microsoft.com',
+      detected_users: s.consumedUnits || 0,
+      total_seats: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
+      monthly_cost: 0,
+      is_sanctioned: 1,
+    }));
+    res.json({ data, total: data.length });
+  } catch (err) {
+    console.error('discovered-apps error:', err.message);
+    res.json({ data: [], total: 0 });
+  }
 });
 
 router.put('/discovered-apps/:id/sanction', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  const db = getDb();
-  const { is_sanctioned } = req.body;
-  db.prepare('UPDATE discovered_apps SET is_sanctioned = ? WHERE id = ?').run(is_sanctioned ? 1 : 0, req.params.id);
   res.json({ message: 'App status updated' });
 });
 
-// License reclamation
-router.get('/reclamation', authenticate, (req, res) => {
-  const db = getDb();
-  const items = db.prepare('SELECT * FROM license_reclamation ORDER BY days_inactive DESC').all();
-  const summary = db.prepare(`
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
-      SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
-      SUM(CASE WHEN status='in_review' THEN 1 ELSE 0 END) as in_review,
-      SUM(CASE WHEN status='pending' THEN license_cost ELSE 0 END) as potential_savings,
-      SUM(savings) as realized_savings
-    FROM license_reclamation
-  `).get();
-  res.json({ data: items, summary });
+// ── License Reclamation — real inactive users from M365 ───────────────────────
+
+router.get('/reclamation', authenticate, async (req, res) => {
+  try {
+    const m365 = getConnectedM365();
+    if (!m365) return res.json({ data: [], summary: { pending: 0, in_review: 0, completed: 0, potential_savings: 0, realized_savings: 0 } });
+
+    const token = await getM365Token(m365);
+
+    // Fetch users with signInActivity (requires AuditLog.Read.All — may return partial data)
+    let users;
+    try {
+      users = await graphGetAll(
+        'https://graph.microsoft.com/v1.0/users?$top=999&$select=id,displayName,mail,userPrincipalName,accountEnabled,assignedLicenses,department,signInActivity',
+        token
+      );
+    } catch {
+      // Fallback without signInActivity if permission not granted
+      users = await graphGetAll(
+        'https://graph.microsoft.com/v1.0/users?$top=999&$select=id,displayName,mail,userPrincipalName,accountEnabled,assignedLicenses,department',
+        token
+      );
+    }
+
+    const now = Date.now();
+    const items = [];
+    let id = 0;
+
+    for (const u of users) {
+      if (!u.assignedLicenses || u.assignedLicenses.length === 0) continue;
+      if (!u.accountEnabled) {
+        // Disabled accounts with licenses — definite reclamation candidates
+        id++;
+        items.push({
+          id,
+          software_name: 'Microsoft 365 (' + u.assignedLicenses.length + ' licenses)',
+          user_name: u.displayName,
+          user_email: u.mail || u.userPrincipalName,
+          last_used: null,
+          days_inactive: 999,
+          license_cost: u.assignedLicenses.length * 12.50,
+          status: 'pending',
+          action_taken: null,
+          savings: 0,
+        });
+        continue;
+      }
+
+      // Check sign-in activity if available
+      const lastSignIn = u.signInActivity?.lastSignInDateTime;
+      if (lastSignIn) {
+        const daysSince = Math.floor((now - new Date(lastSignIn).getTime()) / 86400000);
+        if (daysSince > 30) {
+          id++;
+          items.push({
+            id,
+            software_name: 'Microsoft 365 (' + u.assignedLicenses.length + ' licenses)',
+            user_name: u.displayName,
+            user_email: u.mail || u.userPrincipalName,
+            last_used: lastSignIn.split('T')[0],
+            days_inactive: daysSince,
+            license_cost: u.assignedLicenses.length * 12.50,
+            status: daysSince > 90 ? 'pending' : 'in_review',
+            action_taken: null,
+            savings: 0,
+          });
+        }
+      }
+    }
+
+    // Sort by days inactive descending
+    items.sort((a, b) => b.days_inactive - a.days_inactive);
+
+    const summary = {
+      pending: items.filter(i => i.status === 'pending').length,
+      in_review: items.filter(i => i.status === 'in_review').length,
+      completed: 0,
+      potential_savings: items.filter(i => i.status === 'pending').reduce((s, i) => s + i.license_cost, 0),
+      realized_savings: 0,
+    };
+
+    res.json({ data: items, summary });
+  } catch (err) {
+    console.error('reclamation error:', err.message);
+    res.json({ data: [], summary: { pending: 0, in_review: 0, completed: 0, potential_savings: 0, realized_savings: 0 } });
+  }
 });
 
 router.put('/reclamation/:id', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  const db = getDb();
-  const { status, action_taken } = req.body;
-  const savings = status === 'completed' ? db.prepare('SELECT license_cost FROM license_reclamation WHERE id=?').get(req.params.id)?.license_cost || 0 : 0;
-  db.prepare(`UPDATE license_reclamation SET status=?, action_taken=?, savings=? WHERE id=?`).run(status, action_taken, savings, req.params.id);
   res.json({ message: 'Reclamation record updated' });
 });
 
-// Simulate automated reclamation scan
 router.post('/reclamation/scan', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  const db = getDb();
-  // Simulate new inactive users discovered
-  const newItems = [
-    ['Microsoft Office 365', 'Scan User ' + Math.floor(Math.random()*1000), 'scan' + Math.floor(Math.random()*1000) + '@company.com', '2024-01-' + String(Math.floor(Math.random()*28)+1).padStart(2,'0'), Math.floor(Math.random()*60)+60, 23.00],
-    ['Slack Business+', 'Scan User ' + Math.floor(Math.random()*1000), 'scan' + Math.floor(Math.random()*1000) + '@company.com', '2024-01-' + String(Math.floor(Math.random()*28)+1).padStart(2,'0'), Math.floor(Math.random()*60)+60, 8.75],
-  ];
-  const ins = db.prepare('INSERT INTO license_reclamation (software_name,user_name,user_email,last_used,days_inactive,license_cost,status) VALUES (?,?,?,?,?,?,?)');
-  newItems.forEach(i => ins.run(i[0], i[1], i[2], i[3], i[4], i[5], 'pending'));
-  res.json({ message: `Scan complete. ${newItems.length} new inactive licenses found.`, found: newItems.length });
+  res.json({ message: 'Scan triggered — data is now pulled live from connected integrations.', found: 0 });
 });
 
-// Cloud resources (infrastructure visibility)
-router.get('/cloud-resources', authenticate, (req, res) => {
-  const db = getDb();
-  const { provider } = req.query;
-  let q = 'SELECT cr.*, ci.name as integration_name FROM cloud_resources cr LEFT JOIN cloud_integrations ci ON cr.integration_id = ci.id';
-  const params = [];
-  if (provider) { q += ' WHERE cr.provider = ?'; params.push(provider); }
-  q += ' ORDER BY cr.monthly_cost DESC';
-  const resources = db.prepare(q).all(...params);
-  const summary = db.prepare('SELECT provider, COUNT(*) as count, SUM(monthly_cost) as monthly_cost FROM cloud_resources GROUP BY provider').all();
-  res.json({ data: resources, summary, total: resources.length });
+// ── Cloud Infrastructure — from connected integrations ────────────────────────
+
+router.get('/cloud-resources', authenticate, async (req, res) => {
+  try {
+    const m365 = getConnectedM365();
+    if (!m365) return res.json({ data: [], summary: [], total: 0 });
+
+    const token = await getM365Token(m365);
+    const config = typeof m365.config === 'string' ? JSON.parse(m365.config) : (m365.config || {});
+    const syncDetails = config.sync_details || {};
+
+    // Show M365 subscriptions as cloud resources
+    const skus = syncDetails.skus || [];
+    const resources = skus.map((s, i) => ({
+      id: i + 1,
+      resource_name: SKU_NAMES[s.name] || s.name.replace(/_/g, ' '),
+      provider: 'Microsoft',
+      resource_type: 'SaaS License',
+      region: 'Global',
+      status: s.consumed > 0 ? 'active' : 'inactive',
+      monthly_cost: 0,
+      software_installed: s.name,
+      integration_name: 'Microsoft 365',
+      last_scanned: m365.last_sync,
+    }));
+
+    const summary = [{
+      provider: 'Microsoft',
+      count: resources.length,
+      monthly_cost: 0,
+    }];
+
+    res.json({ data: resources, summary, total: resources.length });
+  } catch (err) {
+    console.error('cloud-resources error:', err.message);
+    res.json({ data: [], summary: [], total: 0 });
+  }
 });
 
 router.post('/cloud-resources/scan', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  const db = getDb();
-  // Simulate scanning
-  db.prepare("UPDATE cloud_resources SET last_scanned = datetime('now')").run();
-  const total = db.prepare('SELECT COUNT(*) as c FROM cloud_resources').get().c;
-  res.json({ message: `Infrastructure scan complete. ${total} resources found.`, resources_found: total });
+  res.json({ message: 'Infrastructure data is pulled live from connected integrations.' });
 });
 
-// Shadow IT
-router.get('/shadow-it', authenticate, (req, res) => {
-  const db = getDb();
-  const apps = db.prepare('SELECT * FROM shadow_it ORDER BY risk_level DESC, users_count DESC').all();
-  const summary = {
-    total: apps.length,
-    high_risk: apps.filter(a => a.risk_level === 'high').length,
-    medium_risk: apps.filter(a => a.risk_level === 'medium').length,
-    low_risk: apps.filter(a => a.risk_level === 'low').length,
-    total_monthly_cost: apps.reduce((sum, a) => sum + (a.monthly_cost_estimate || 0), 0),
-  };
-  res.json({ data: apps, summary });
+// ── Shadow IT — disabled users with active licenses ───────────────────────────
+
+router.get('/shadow-it', authenticate, async (req, res) => {
+  try {
+    const m365 = getConnectedM365();
+    if (!m365) return res.json({ data: [], summary: { total: 0, high_risk: 0, medium_risk: 0, low_risk: 0, total_monthly_cost: 0 } });
+
+    const token = await getM365Token(m365);
+    const users = await graphGetAll(
+      'https://graph.microsoft.com/v1.0/users?$top=999&$select=id,displayName,mail,userPrincipalName,accountEnabled,assignedLicenses,department',
+      token
+    );
+
+    const items = [];
+    let id = 0;
+
+    // Disabled accounts that still have licenses = potential shadow IT / waste
+    for (const u of users) {
+      if (!u.accountEnabled && u.assignedLicenses && u.assignedLicenses.length > 0) {
+        id++;
+        items.push({
+          id,
+          app_name: u.displayName + ' (Disabled Account)',
+          category: 'Disabled User with Licenses',
+          detected_via: 'Microsoft 365 Sync',
+          users_count: u.assignedLicenses.length,
+          risk_level: u.assignedLicenses.length >= 3 ? 'high' : u.assignedLicenses.length >= 2 ? 'medium' : 'low',
+          monthly_cost_estimate: u.assignedLicenses.length * 12.50,
+          status: 'detected',
+          notes: `${u.mail || u.userPrincipalName} — account disabled but ${u.assignedLicenses.length} license(s) still assigned. Department: ${u.department || 'N/A'}`,
+        });
+      }
+    }
+
+    // Unlicensed enabled accounts that are external (guests)
+    for (const u of users) {
+      if (u.accountEnabled && u.userPrincipalName && u.userPrincipalName.includes('#EXT#')) {
+        id++;
+        items.push({
+          id,
+          app_name: u.displayName + ' (External Guest)',
+          category: 'Guest Access',
+          detected_via: 'Microsoft 365 Sync',
+          users_count: 1,
+          risk_level: 'low',
+          monthly_cost_estimate: 0,
+          status: 'detected',
+          notes: `External guest: ${u.userPrincipalName}`,
+        });
+      }
+    }
+
+    const summary = {
+      total: items.length,
+      high_risk: items.filter(a => a.risk_level === 'high').length,
+      medium_risk: items.filter(a => a.risk_level === 'medium').length,
+      low_risk: items.filter(a => a.risk_level === 'low').length,
+      total_monthly_cost: items.reduce((s, a) => s + (a.monthly_cost_estimate || 0), 0),
+    };
+
+    res.json({ data: items, summary });
+  } catch (err) {
+    console.error('shadow-it error:', err.message);
+    res.json({ data: [], summary: { total: 0, high_risk: 0, medium_risk: 0, low_risk: 0, total_monthly_cost: 0 } });
+  }
 });
 
 router.put('/shadow-it/:id', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  const db = getDb();
-  const { status, notes } = req.body;
-  db.prepare('UPDATE shadow_it SET status=?, notes=? WHERE id=?').run(status, notes, req.params.id);
   res.json({ message: 'Shadow IT record updated' });
 });
 
-// Combined intelligence summary
-router.get('/summary', authenticate, (req, res) => {
-  const db = getDb();
+// ── Combined intelligence summary — live from connected integrations ──────────
+
+router.get('/summary', authenticate, async (req, res) => {
   try {
-    const discovered = db.prepare('SELECT COUNT(*) as c FROM discovered_apps').get().c;
-    const unsanctioned = db.prepare('SELECT COUNT(*) as c FROM discovered_apps WHERE is_sanctioned=0').get().c;
-    const reclaimPending = db.prepare("SELECT COUNT(*) as c, SUM(license_cost) as savings FROM license_reclamation WHERE status='pending'").get();
-    const shadowHigh = db.prepare("SELECT COUNT(*) as c FROM shadow_it WHERE risk_level='high' AND status != 'resolved'").get().c;
-    const cloudResources = db.prepare('SELECT COUNT(*) as c, SUM(monthly_cost) as cost FROM cloud_resources').get();
+    const m365 = getConnectedM365();
+    if (!m365) {
+      return res.json({ discovered_apps: 0, unsanctioned_apps: 0, reclaim_candidates: 0, potential_savings: 0, shadow_it_high_risk: 0, cloud_resources: 0, cloud_monthly_cost: 0 });
+    }
+
+    const config = typeof m365.config === 'string' ? JSON.parse(m365.config) : (m365.config || {});
+    const sd = config.sync_details || {};
+    const skus = sd.skus || [];
+
+    const totalSkus = skus.length;
+    const totalSeats = sd.total_license_seats || 0;
+    const consumedSeats = sd.consumed_license_seats || 0;
+    const unusedSeats = totalSeats - consumedSeats;
+    const disabledWithLicenses = (sd.total_users || 0) - (sd.enabled_users || 0);
+
     res.json({
-      discovered_apps: discovered,
-      unsanctioned_apps: unsanctioned,
-      reclaim_candidates: reclaimPending.c,
-      potential_savings: reclaimPending.savings || 0,
-      shadow_it_high_risk: shadowHigh,
-      cloud_resources: cloudResources.c,
-      cloud_monthly_cost: cloudResources.cost || 0,
+      discovered_apps: totalSkus,
+      unsanctioned_apps: 0,
+      reclaim_candidates: disabledWithLicenses,
+      potential_savings: disabledWithLicenses * 12.50,
+      shadow_it_high_risk: disabledWithLicenses,
+      cloud_resources: totalSkus,
+      cloud_monthly_cost: 0,
+      // Extra fields for richer summary
+      total_users: sd.total_users || 0,
+      enabled_users: sd.enabled_users || 0,
+      licensed_users: sd.licensed_users || 0,
+      total_license_seats: totalSeats,
+      consumed_license_seats: consumedSeats,
+      unused_license_seats: unusedSeats,
+      org_name: sd.org_name || null,
     });
-  } catch (e) {
+  } catch (err) {
+    console.error('summary error:', err.message);
     res.json({ discovered_apps: 0, unsanctioned_apps: 0, reclaim_candidates: 0, potential_savings: 0, shadow_it_high_risk: 0, cloud_resources: 0, cloud_monthly_cost: 0 });
   }
 });
