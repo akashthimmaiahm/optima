@@ -79,8 +79,9 @@ function proxyMiddleware(req, res) {
   }
 
   // Build the upstream URL
-  // Express strips the /api mount prefix, so req.url is e.g. /dashboard/stats
-  const upstreamUrl = new URL('/api' + req.url, target);
+  // Use originalUrl to preserve the full path (e.g. /api/agent/register)
+  // since sub-mounted middleware (like /api/agent) strips its prefix from req.url
+  const upstreamUrl = new URL(req.originalUrl, target);
   const isHttps = upstreamUrl.protocol === 'https:';
   const transport = isHttps ? https : http;
 
