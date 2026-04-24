@@ -110,7 +110,7 @@ export default function Sidebar({ isOpen }) {
             <LogOut size={14} />
           </button>
         </div>
-        <p className="text-xs text-gray-400 dark:text-gray-700 text-center mt-1.5">Optima v7.1.2 Enterprise</p>
+        <p className="text-xs text-gray-400 dark:text-gray-600 text-center mt-1.5">Optima v7.1.2 Enterprise</p>
       </div>
     </aside>
   )

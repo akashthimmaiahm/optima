@@ -45,7 +45,7 @@ function ScoreGauge({ score }) {
     <div className="flex flex-col items-center justify-center py-2">
       <div className="relative w-32 h-32">
         <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-          <circle cx="60" cy="60" r="50" fill="none" stroke="#374151" strokeWidth="12" />
+          <circle cx="60" cy="60" r="50" fill="none" className="stroke-gray-200 dark:stroke-gray-700" strokeWidth="12" />
           <circle cx="60" cy="60" r="50" fill="none" stroke={color} strokeWidth="12"
             strokeDasharray={`${(score / 100) * 314} 314`} strokeLinecap="round" />
         </svg>
@@ -64,7 +64,7 @@ function UtilBar({ pct }) {
   const color = pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-red-500'
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 bg-gray-700 rounded-full h-1.5">
+      <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
         <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       <span className="text-xs text-gray-500 w-8 text-right">{pct}%</span>
@@ -74,7 +74,7 @@ function UtilBar({ pct }) {
 
 function EditPanel({ enabled, onToggle, onClose, onReset }) {
   return (
-    <div className="card p-5 mb-6 border-blue-700/40 bg-[#0d1117]">
+    <div className="card p-5 mb-6 border-blue-200 dark:border-blue-700/40 bg-blue-50 dark:bg-[#0d1117]">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <LayoutDashboard size={16} className="text-blue-400" />
@@ -95,7 +95,7 @@ function EditPanel({ enabled, onToggle, onClose, onReset }) {
             <button
               key={w.id}
               onClick={() => onToggle(w.id)}
-              className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${on ? 'border-blue-600/50 bg-blue-600/10' : 'border-[#2a2a35] bg-[#16161e] opacity-50'}`}
+              className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${on ? 'border-blue-600/50 bg-blue-600/10' : 'border-gray-200 dark:border-[#2a2a35] bg-gray-100 dark:bg-[#16161e] opacity-50'}`}
             >
               <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${on ? 'bg-blue-600 border-blue-600' : 'border-gray-600'}`}>
                 {on && <Check size={10} className="text-white" />}
@@ -265,8 +265,8 @@ export default function Dashboard() {
                   <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} />
                   <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: '#9ca3af' }} width={90} />
                   <Tooltip
-                    contentStyle={{ background: '#1a1a1f', border: '1px solid #2a2a35', borderRadius: 8 }}
-                    labelStyle={{ color: '#fff' }}
+                    contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }}
+                    labelStyle={{ color: 'var(--tooltip-text, #fff)' }}
                     formatter={v => [`$${v.toLocaleString()}`, 'Monthly Cost']}
                   />
                   <Bar dataKey="monthly_cost" radius={[0, 4, 4, 0]}>
@@ -356,7 +356,7 @@ export default function Dashboard() {
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {(c.expiringCostlyAssets || []).map((a, i) => (
-              <div key={i} className="flex items-center justify-between p-3 bg-[#0d0d0d] border border-[#2a2a35] rounded-xl">
+              <div key={i} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#2a2a35] rounded-xl">
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${a.days_left <= 30 ? 'bg-red-500' : 'bg-yellow-500'}`} />
                   <div>
@@ -384,7 +384,7 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a35" />
                 <XAxis dataKey="status" tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                <Tooltip contentStyle={{ background: '#1a1a1f', border: '1px solid #2a2a35', borderRadius: 8 }} labelStyle={{ color: '#fff' }} />
+                <Tooltip contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }} labelStyle={{ color: 'var(--tooltip-text, #fff)' }} />
                 <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -397,7 +397,7 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#2a2a35" />
                 <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} />
                 <YAxis type="category" dataKey="type" tick={{ fontSize: 10, fill: '#9ca3af' }} width={80} />
-                <Tooltip contentStyle={{ background: '#1a1a1f', border: '1px solid #2a2a35', borderRadius: 8 }} labelStyle={{ color: '#fff' }} formatter={v => [`$${v.toLocaleString()}`, 'Total Value']} />
+                <Tooltip contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }} labelStyle={{ color: 'var(--tooltip-text, #fff)' }} formatter={v => [`$${v.toLocaleString()}`, 'Total Value']} />
                 <Bar dataKey="total_cost" radius={[0, 4, 4, 0]}>
                   {(c.hardwareCostByType || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Bar>

@@ -3,17 +3,17 @@
 @tailwind utilities;
 
 @layer base {
-  html      { @apply bg-black dark:bg-black; }
-  body      { @apply bg-black dark:bg-black text-gray-100; }
+  html      { @apply bg-gray-50 dark:bg-black; }
+  body      { @apply bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100; }
   * { box-sizing: border-box; }
 
-  /* Scrollbar */
-  ::-webkit-scrollbar       { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: #111; }
-  ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #555; }
-  ::-webkit-scrollbar-corner { background: #111; }
-  * { scrollbar-width: thin; scrollbar-color: #444 #111; }
+  /* Scrollbar – dark default */
+  .dark ::-webkit-scrollbar       { width: 5px; height: 5px; }
+  .dark ::-webkit-scrollbar-track { background: #111; }
+  .dark ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+  .dark ::-webkit-scrollbar-thumb:hover { background: #555; }
+  .dark ::-webkit-scrollbar-corner { background: #111; }
+  .dark * { scrollbar-width: thin; scrollbar-color: #444 #111; }
 }
 
 @layer components {
@@ -29,49 +29,112 @@
   .table-row    { @apply border-b border-gray-200 dark:border-[#2a2a35] hover:bg-gray-50 dark:hover:bg-[#1e1e28] transition-colors; }
 }
 
-/* ── Light mode: page/layout backgrounds ────────────────────────────────── */
-html:not(.dark) body        { background: #f0f4f8; color: #111827; }
-html:not(.dark) main        { background: #f0f4f8 !important; }
-html:not(.dark) .flex.h-screen { background: #f0f4f8; }
+/* ── Light mode overrides ───────────────────────────────────────────────── */
+/* Using attribute selectors [class~="..."] to avoid Tailwind circular deps */
 
-/* Header */
-html:not(.dark) header {
-  background: #ffffff !important;
-  border-color: #e5e7eb !important;
-}
-html:not(.dark) header span,
-html:not(.dark) header p    { color: #374151 !important; }
-html:not(.dark) header button { color: #6b7280; }
-html:not(.dark) header button:hover { color: #111827; }
-
-/* Dark hardcoded background panels inside pages */
+/* Dark hardcoded background panels */
 html:not(.dark) [class*="bg-[#0e0e12]"]  { background-color: #ffffff !important; }
 html:not(.dark) [class*="bg-[#16161e]"]  { background-color: #ffffff !important; }
+html:not(.dark) [class*="bg-[#16161a]"]  { background-color: #ffffff !important; }
 html:not(.dark) [class*="bg-[#1a1a1f]"]  { background-color: #f9fafb !important; }
 html:not(.dark) [class*="bg-[#1e1e28]"]  { background-color: #f3f4f6 !important; }
-html:not(.dark) [class*="bg-[#22222e]"]  { background-color: #e5e7eb !important; }
+html:not(.dark) [class*="bg-[#22222e]"]  { background-color: #f3f4f6 !important; }
 html:not(.dark) [class*="bg-[#0d0d0d]"]  { background-color: #f9fafb !important; }
 html:not(.dark) [class*="bg-[#1a1a24]"]  { background-color: #f3f4f6 !important; }
 html:not(.dark) [class*="bg-[#0d1117]"]  { background-color: #f0f4f8 !important; }
 
-/* Dark hardcoded borders inside pages */
+/* Dark hardcoded borders */
 html:not(.dark) [class*="border-[#2a2a35]"] { border-color: #e5e7eb !important; }
 html:not(.dark) [class*="border-[#3a3a4a]"] { border-color: #d1d5db !important; }
 html:not(.dark) [class*="border-[#1e1e28]"] { border-color: #e5e7eb !important; }
 
-/* Text in page content areas */
-html:not(.dark) main .text-white   { color: #111827 !important; }
-html:not(.dark) main .text-gray-200 { color: #1f2937 !important; }
-html:not(.dark) main .text-gray-300 { color: #374151 !important; }
-html:not(.dark) main .text-gray-400 { color: #6b7280 !important; }
-html:not(.dark) main .text-gray-500 { color: #9ca3af !important; }
-html:not(.dark) main .text-gray-600 { color: #6b7280 !important; }
+/* Text color overrides — use attribute selectors to avoid circular deps */
+html:not(.dark) [class~="text-white"]    { color: #111827 !important; }
+html:not(.dark) [class~="text-gray-100"] { color: #1f2937 !important; }
+html:not(.dark) [class~="text-gray-200"] { color: #1f2937 !important; }
+html:not(.dark) [class~="text-gray-300"] { color: #374151 !important; }
+
+/* Colored text — darker variants for light mode readability */
+html:not(.dark) [class~="text-blue-400"]    { color: #2563eb !important; }
+html:not(.dark) [class~="text-green-400"]   { color: #16a34a !important; }
+html:not(.dark) [class~="text-red-400"]     { color: #dc2626 !important; }
+html:not(.dark) [class~="text-yellow-400"]  { color: #ca8a04 !important; }
+html:not(.dark) [class~="text-orange-400"]  { color: #ea580c !important; }
+html:not(.dark) [class~="text-purple-400"]  { color: #9333ea !important; }
+html:not(.dark) [class~="text-cyan-400"]    { color: #0891b2 !important; }
+html:not(.dark) [class~="text-indigo-400"]  { color: #4f46e5 !important; }
+html:not(.dark) [class~="text-indigo-300"]  { color: #4f46e5 !important; }
+
+/* Tinted dark background panels → light tints */
+html:not(.dark) [class*="bg-blue-900/20"]    { background-color: #eff6ff !important; }
+html:not(.dark) [class*="bg-green-900/20"]   { background-color: #f0fdf4 !important; }
+html:not(.dark) [class*="bg-red-900/20"]     { background-color: #fef2f2 !important; }
+html:not(.dark) [class*="bg-yellow-900/20"]  { background-color: #fefce8 !important; }
+html:not(.dark) [class*="bg-orange-900/20"]  { background-color: #fff7ed !important; }
+html:not(.dark) [class*="bg-purple-900/20"]  { background-color: #faf5ff !important; }
+html:not(.dark) [class*="bg-cyan-900/20"]    { background-color: #ecfeff !important; }
+html:not(.dark) [class*="bg-indigo-900/20"]  { background-color: #eef2ff !important; }
+html:not(.dark) [class*="bg-blue-900/30"]    { background-color: #dbeafe !important; }
+html:not(.dark) [class*="bg-green-900/30"]   { background-color: #dcfce7 !important; }
+html:not(.dark) [class*="bg-red-900/30"]     { background-color: #fee2e2 !important; }
+html:not(.dark) [class*="bg-yellow-900/30"]  { background-color: #fef9c3 !important; }
+html:not(.dark) [class*="bg-orange-900/30"]  { background-color: #ffedd5 !important; }
+html:not(.dark) [class*="bg-purple-900/30"]  { background-color: #f3e8ff !important; }
+html:not(.dark) [class*="bg-indigo-900/30"]  { background-color: #e0e7ff !important; }
+html:not(.dark) [class*="bg-blue-600/20"]    { background-color: #dbeafe !important; }
+html:not(.dark) [class*="bg-blue-600/10"]    { background-color: #eff6ff !important; }
+
+/* Tinted border colors → light equivalents */
+html:not(.dark) [class*="border-blue-800"]    { border-color: #bfdbfe !important; }
+html:not(.dark) [class*="border-green-800"]   { border-color: #bbf7d0 !important; }
+html:not(.dark) [class*="border-red-800"]     { border-color: #fecaca !important; }
+html:not(.dark) [class*="border-yellow-800"]  { border-color: #fde68a !important; }
+html:not(.dark) [class*="border-orange-800"]  { border-color: #fed7aa !important; }
+html:not(.dark) [class*="border-purple-800"]  { border-color: #e9d5ff !important; }
+html:not(.dark) [class*="border-indigo-800"]  { border-color: #c7d2fe !important; }
+html:not(.dark) [class*="border-blue-700"]    { border-color: #93c5fd !important; }
+
+/* Colored text on tinted backgrounds — use darker shade in light mode */
+html:not(.dark) [class*="bg-blue-900"] [class~="text-blue-300"]   { color: #1d4ed8 !important; }
+html:not(.dark) [class*="bg-green-900"] [class~="text-green-300"]  { color: #15803d !important; }
+html:not(.dark) [class*="bg-red-900"] [class~="text-red-300"]      { color: #b91c1c !important; }
+html:not(.dark) [class*="bg-yellow-900"] [class~="text-yellow-300"] { color: #a16207 !important; }
+html:not(.dark) [class*="bg-orange-900"] [class~="text-orange-300"] { color: #c2410c !important; }
+html:not(.dark) [class*="bg-purple-900"] [class~="text-purple-300"] { color: #7e22ce !important; }
+html:not(.dark) [class*="bg-indigo-900"] [class~="text-indigo-300"] { color: #4338ca !important; }
+
+/* Recharts / SVG text */
+html:not(.dark) .recharts-text { fill: #374151 !important; }
+html:not(.dark) .recharts-cartesian-axis-tick-value { fill: #6b7280 !important; }
+
+/* Preserve white text inside blue buttons & avatars */
+html:not(.dark) [class~="bg-blue-600"] [class~="text-white"] { color: #ffffff !important; }
+html:not(.dark) [class~="bg-red-600"] [class~="text-white"]  { color: #ffffff !important; }
+html:not(.dark) button[class*="bg-blue-600"] { color: #ffffff !important; }
+html:not(.dark) .btn-primary { color: #ffffff !important; }
+html:not(.dark) .btn-danger  { color: #ffffff !important; }
+
+/* Active nav links (bg-blue-600 text-white) stay white */
+html:not(.dark) a[class*="bg-blue-600"][class~="text-white"] { color: #ffffff !important; }
 
 /* Modal overlay backdrop */
-html:not(.dark) [class*="bg-black/"]  { background-color: rgba(0,0,0,0.5) !important; }
+html:not(.dark) [class*="bg-black/"]  { background-color: rgba(0,0,0,0.4) !important; }
 
 /* Scrollbar in light */
+html:not(.dark) ::-webkit-scrollbar       { width: 5px; height: 5px; }
 html:not(.dark) ::-webkit-scrollbar-track { background: #e5e7eb; }
 html:not(.dark) ::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
 html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 html:not(.dark) * { scrollbar-color: #9ca3af #e5e7eb; }
+
+/* CSS variables for inline styles (Recharts tooltips, etc.) */
+:root {
+  --tooltip-bg: #ffffff;
+  --tooltip-border: #e5e7eb;
+  --tooltip-text: #111827;
+}
+.dark {
+  --tooltip-bg: #1a1a1f;
+  --tooltip-border: #2a2a35;
+  --tooltip-text: #ffffff;
+}

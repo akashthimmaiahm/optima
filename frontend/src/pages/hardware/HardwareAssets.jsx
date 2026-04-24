@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Cpu, HardDrive, Wifi, Bot, User } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Cpu, HardDrive, Wifi, Bot, User, ExternalLink } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import Modal from '../../components/common/Modal'
@@ -108,6 +108,15 @@ function HardwareRow({ asset: a, canEdit, onEdit, onDelete }) {
         </td>
         <td className="table-cell">
           <div className="flex gap-1">
+            <a
+              href="https://app.sclera.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-500 hover:text-green-500 transition-colors"
+              title="Monitor"
+            >
+              <Monitor size={14} />
+            </a>
             {canEdit && <>
               <button onClick={() => onEdit(a)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-500 hover:text-blue-400 transition-colors"><Edit size={14} /></button>
               <button onClick={() => onDelete(a.id)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
