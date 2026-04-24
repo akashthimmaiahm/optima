@@ -348,6 +348,17 @@ function initDatabase() {
   try { db.exec("ALTER TABLE software_assets ADD COLUMN agent_hostname TEXT") } catch(e) {}
   // Backfill source for existing agent-discovered rows
   try { db.exec("UPDATE software_assets SET source='agent' WHERE notes='Agent-discovered' AND (source IS NULL OR source='manual')") } catch(e) {}
+  // Backfill discovered_by_agent for legacy agent-discovered software
+  try {
+    const needsBackfill = db.prepare("SELECT COUNT(*) as c FROM software_assets WHERE (source='agent' OR notes='Agent-discovered') AND discovered_by_agent IS NULL").get();
+    if (needsBackfill.c > 0) {
+      const latestAgent = db.prepare("SELECT agent_id, hostname FROM agents ORDER BY last_seen DESC LIMIT 1").get();
+      if (latestAgent) {
+        db.prepare("UPDATE software_assets SET discovered_by_agent=?, agent_hostname=? WHERE (source='agent' OR notes='Agent-discovered') AND discovered_by_agent IS NULL")
+          .run(latestAgent.agent_id, latestAgent.hostname);
+      }
+    }
+  } catch(e) {}
 
   seedDefaultProperty(db);
   seedProductionUsers(db);

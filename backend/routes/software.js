@@ -6,7 +6,7 @@ const { authorize } = require('../middleware/rbac');
 
 router.get('/', authenticate, (req, res) => {
   const db = getDb();
-  const { search, category, status, source, agent_id, page = 1, limit = 50 } = req.query;
+  const { search, category, status, source, agent_id, device_search, page = 1, limit = 50 } = req.query;
   let query = 'SELECT * FROM software_assets WHERE 1=1';
   const params = [];
   if (search) { query += ' AND (name LIKE ? OR vendor LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
@@ -14,7 +14,9 @@ router.get('/', authenticate, (req, res) => {
   if (status) { query += ' AND status = ?'; params.push(status); }
   if (source === 'agent') { query += " AND (source='agent' OR notes='Agent-discovered')"; }
   else if (source === 'manual') { query += " AND (source IS NULL OR source='manual') AND notes != 'Agent-discovered'"; }
-  if (agent_id) { query += ' AND discovered_by_agent = ?'; params.push(agent_id); }
+  if (agent_id === 'unknown') { query += ' AND discovered_by_agent IS NULL'; }
+  else if (agent_id) { query += ' AND discovered_by_agent = ?'; params.push(agent_id); }
+  if (device_search) { query += ' AND agent_hostname LIKE ?'; params.push(`%${device_search}%`); }
   query += ' ORDER BY created_at DESC';
   const software = db.prepare(query).all(...params);
   res.json({ data: software, total: software.length });

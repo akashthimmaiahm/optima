@@ -29,6 +29,7 @@ export default function SoftwareAssets() {
   const [agents, setAgents] = useState([])
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [agentsLoading, setAgentsLoading] = useState(false)
+  const [deviceSearch, setDeviceSearch] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -36,6 +37,7 @@ export default function SoftwareAssets() {
     if (sourceTab === 'agent') params.source = 'agent'
     else if (sourceTab === 'manual') params.source = 'manual'
     if (selectedAgent) params.agent_id = selectedAgent
+    if (deviceSearch && sourceTab === 'agent') params.device_search = deviceSearch
     api.get('/software', { params }).then(r => setSoftware(r.data.data)).finally(() => setLoading(false))
   }
 
@@ -49,7 +51,7 @@ export default function SoftwareAssets() {
   }
 
   useEffect(() => { loadStats(); loadAgents() }, [])
-  useEffect(() => { load() }, [search, sourceTab, selectedAgent])
+  useEffect(() => { load() }, [search, sourceTab, selectedAgent, deviceSearch])
 
   const openAdd = () => { setEditItem(null); setForm(initialForm); setModalOpen(true) }
   const openEdit = (item) => { setEditItem(item); setForm({ ...item, purchase_date: item.purchase_date?.split('T')[0] || '', expiry_date: item.expiry_date?.split('T')[0] || '' }); setModalOpen(true) }
@@ -120,9 +122,20 @@ export default function SoftwareAssets() {
       {/* Agent List Panel (shown when agent tab is selected) */}
       {sourceTab === 'agent' && (
         <div className="card p-4">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-            <Monitor size={16} /> Discovered by Agents
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+              <Monitor size={16} /> Discovered by Agents
+            </h3>
+            <div className="relative w-64">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <input
+                placeholder="Search by device name..."
+                className="input pl-9 py-2 text-sm"
+                value={deviceSearch}
+                onChange={e => { setDeviceSearch(e.target.value); setSelectedAgent(null) }}
+              />
+            </div>
+          </div>
           {agentsLoading ? (
             <div className="text-sm text-gray-400 py-2">Loading agents...</div>
           ) : agents.length === 0 ? (
