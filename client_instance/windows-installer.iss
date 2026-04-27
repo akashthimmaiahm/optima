@@ -14,7 +14,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={autopf}\Optima Property Server
+DefaultDirName={commonappdata}\Optima Property Server
 DefaultGroupName=Optima
 OutputDir=dist
 OutputBaseFilename=optima-property-setup
@@ -48,9 +48,6 @@ Name: "{group}\Uninstall Optima"; Filename: "{uninstallexe}"
 [Run]
 ; Install Node.js if needed
 Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\node-v18.20.8-x64.msi"" /qn /norestart"; StatusMsg: "Installing Node.js..."; Check: NeedsNodeJS; Flags: waituntilterminated
-; Start the property server as a service via nssm or as a scheduled task
-Filename: "cmd.exe"; Parameters: "/c schtasks /Create /TN ""OptimaProperty"" /TR ""\""{code:GetNodePath}\"" \""{app}\backend\property-server.js\"""" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"; StatusMsg: "Creating startup task..."; Flags: runhidden waituntilterminated
-Filename: "cmd.exe"; Parameters: "/c schtasks /Create /TN ""OptimaPropertyDaily"" /TR ""\""{code:GetNodePath}\"" \""{app}\backend\property-server.js\"""" /SC DAILY /ST 00:05 /RU SYSTEM /RL HIGHEST /F"; StatusMsg: "Creating daily task..."; Flags: runhidden waituntilterminated
 
 [UninstallRun]
 Filename: "cmd.exe"; Parameters: "/c schtasks /Delete /TN ""OptimaProperty"" /F"; Flags: runhidden; RunOnceId: "DelTask1"
@@ -63,6 +60,8 @@ Type: filesandordirs; Name: "{app}"
 [Code]
 var
   PropertyKeyPage: TInputQueryWizardPage;
+  PortPage: TInputQueryWizardPage;
+  ChosenPort: String;
 
 function NeedsNodeJS: Boolean;
 var
@@ -78,21 +77,50 @@ begin
     Result := 'node';
 end;
 
+function IsPortInUse(Port: String): Boolean;
+var
+  ResultCode: Integer;
+  TmpFile: String;
+  Content: AnsiString;
+begin
+  Result := False;
+  TmpFile := ExpandConstant('{tmp}\portcheck.txt');
+  Exec('cmd.exe', '/c netstat -an | findstr ":' + Port + ' " > "' + TmpFile + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if LoadStringFromFile(TmpFile, Content) then
+  begin
+    if Pos('LISTENING', String(Content)) > 0 then
+      Result := True;
+  end;
+  DeleteFile(TmpFile);
+end;
+
 procedure InitializeWizard;
 begin
   PropertyKeyPage := CreateInputQueryPage(wpSelectDir,
     'Property Key',
     'Enter your Optima property key',
-    'Get your key from https://optima.sclera.com → Properties → Key');
+    'Get your key from https://optima.sclera.com'#13#10'Navigate to Properties → Your Property → Key');
   PropertyKeyPage.Add('Property Key:', False);
   PropertyKeyPage.Values[0] := '';
+
+  PortPage := CreateInputQueryPage(PropertyKeyPage.ID,
+    'Server Port',
+    'Choose the port for the property server',
+    'Default is 5000. If another service is already using port 5000,'#13#10'enter a different port (e.g. 5001, 5002).');
+  PortPage.Add('Port:', False);
+  PortPage.Values[0] := '5000';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Key: String;
+  Key, Port: String;
+  PortNum: Integer;
+  KillChoice: Integer;
+  ResultCode: Integer;
 begin
   Result := True;
+
   if CurPageID = PropertyKeyPage.ID then
   begin
     Key := Trim(PropertyKeyPage.Values[0]);
@@ -100,7 +128,49 @@ begin
     begin
       MsgBox('Property key cannot be empty.', mbError, MB_OK);
       Result := False;
+      Exit;
     end;
+  end;
+
+  if CurPageID = PortPage.ID then
+  begin
+    Port := Trim(PortPage.Values[0]);
+    PortNum := StrToIntDef(Port, 0);
+    if (PortNum < 1024) or (PortNum > 65535) then
+    begin
+      MsgBox('Port must be between 1024 and 65535.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+
+    if IsPortInUse(Port) then
+    begin
+      KillChoice := MsgBox(
+        'Port ' + Port + ' is already in use by another process.'#13#10#13#10 +
+        'Click YES to kill the existing process and use this port.'#13#10 +
+        'Click NO to go back and choose a different port.',
+        mbConfirmation, MB_YESNO);
+      if KillChoice = IDYES then
+      begin
+        { Kill the process using this port }
+        Exec('cmd.exe', '/c for /f "tokens=5" %a in (''netstat -ano ^| findstr :' + Port + ' ^| findstr LISTENING'') do taskkill /F /PID %a',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        { Brief wait for port release }
+        Sleep(1000);
+        if IsPortInUse(Port) then
+        begin
+          MsgBox('Could not free port ' + Port + '. Please choose a different port.', mbError, MB_OK);
+          Result := False;
+          Exit;
+        end;
+      end
+      else
+      begin
+        Result := False;
+        Exit;
+      end;
+    end;
+    ChosenPort := Port;
   end;
 end;
 
@@ -110,19 +180,31 @@ var
   NodePath: String;
   Key: String;
   EnvContent: String;
+  TaskCmd: String;
 begin
   if CurStep = ssPostInstall then
   begin
-    { Write .env file with the property key (after files are copied) }
+    { Write .env file with property key and chosen port }
     Key := Trim(PropertyKeyPage.Values[0]);
+    if ChosenPort = '' then
+      ChosenPort := '5000';
+
     EnvContent := 'PROPERTY_KEY=' + Key + #13#10 +
                   'CENTRAL_SERVER_URL=https://optima.sclera.com' + #13#10 +
-                  'PORT=5000' + #13#10;
+                  'PORT=' + ChosenPort + #13#10;
     SaveStringToFile(ExpandConstant('{app}\backend\.env'), EnvContent, False);
 
-    { Start the property server immediately }
+    { Create scheduled tasks }
     NodePath := GetNodePath('');
-    Exec('cmd.exe', '/c start "" "' + NodePath + '" "' + ExpandConstant('{app}\backend\property-server.js') + '"',
+    TaskCmd := '"' + NodePath + '" "' + ExpandConstant('{app}\backend\property-server.js') + '"';
+
+    Exec('cmd.exe', '/c schtasks /Create /TN "OptimaProperty" /TR "' + TaskCmd + '" /SC ONSTART /RU SYSTEM /RL HIGHEST /F',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('cmd.exe', '/c schtasks /Create /TN "OptimaPropertyDaily" /TR "' + TaskCmd + '" /SC DAILY /ST 00:05 /RU SYSTEM /RL HIGHEST /F',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    { Start the property server immediately }
+    Exec('cmd.exe', '/c start "" ' + TaskCmd,
       ExpandConstant('{app}\backend'), SW_HIDE, ewNoWait, ResultCode);
   end;
 end;

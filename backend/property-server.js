@@ -80,14 +80,25 @@ function saveEnvVar(key, value) {
   fs.writeFileSync(ENV_FILE, content);
 }
 
-// ── Detect real public IP (EC2 IMDSv2 or env var fallback) ───────────────────
+// ── Detect reachable IP (EC2 IMDSv2, then LAN IP fallback) ──────────────────
+
+function getLanIP() {
+  const os = require('os');
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return null;
+}
 
 async function getPublicIP() {
   // Allow manual override via env var (useful for non-EC2 or local installs)
   if (process.env.EC2_PUBLIC_IP) return process.env.EC2_PUBLIC_IP;
 
   // Try EC2 IMDSv2: first get token, then use it to fetch public IPv4
-  return new Promise((resolve) => {
+  const ec2Ip = await new Promise((resolve) => {
     const tokenReq = http.request({
       hostname: '169.254.169.254',
       path:     '/latest/api/token',
@@ -118,6 +129,11 @@ async function getPublicIP() {
     tokenReq.on('timeout', () => { tokenReq.destroy(); resolve(null); });
     tokenReq.end();
   });
+
+  if (ec2Ip) return ec2Ip;
+
+  // Fallback: use LAN IP for non-EC2 (local/on-prem) installs
+  return getLanIP();
 }
 
 // ── Setup: verify property key with central server ────────────────────────────
@@ -275,13 +291,14 @@ async function main() {
   }
 }
 
-function connectWebSocket(centralProperty, slug) {
+async function connectWebSocket(centralProperty, slug) {
   let WebSocket;
   try { WebSocket = require('ws'); } catch { console.log('  ws package not installed — skipping WebSocket'); return; }
 
+  const detectedIp = await getPublicIP() || 'localhost';
   const wsProto = CENTRAL_URL.startsWith('https') ? 'wss' : 'ws';
   const host = CENTRAL_URL.replace(/^https?:\/\//, '');
-  const params = `role=property&property_id=${centralProperty.id}&slug=${encodeURIComponent(slug)}&ec2_url=${encodeURIComponent(`http://${process.env.EC2_PUBLIC_IP || 'localhost'}:${PORT}`)}`;
+  const params = `role=property&property_id=${centralProperty.id}&slug=${encodeURIComponent(slug)}&ec2_url=${encodeURIComponent(`http://${detectedIp}:${PORT}`)}`;
   const wsUrl = `${wsProto}://${host}/ws?${params}`;
 
   let ws = null;

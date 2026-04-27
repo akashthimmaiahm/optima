@@ -10,6 +10,7 @@ INSTALL_DIR="/opt/optima-property"
 SERVICE_NAME="optima-property"
 NODE_MAJOR=18
 PAYLOAD_SIZE=__PAYLOAD_SIZE__
+DEFAULT_PORT=5000
 
 echo ""
 echo "╔════════════════════════════════════════════╗"
@@ -25,14 +26,13 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # ── Step 1: Install Node.js if not present ──────────────────────────────────
-echo "  [1/5] Checking Node.js..."
+echo "  [1/6] Checking Node.js..."
 if command -v node &>/dev/null; then
   NODE_VER=$(node -v)
   echo "  Node.js $NODE_VER is already installed."
 else
   echo "  Installing Node.js $NODE_MAJOR.x..."
   if command -v apt-get &>/dev/null; then
-    # Debian/Ubuntu
     apt-get update -qq
     apt-get install -y -qq curl ca-certificates gnupg
     mkdir -p /etc/apt/keyrings
@@ -41,7 +41,6 @@ else
     apt-get update -qq
     apt-get install -y -qq nodejs
   elif command -v yum &>/dev/null; then
-    # RHEL/CentOS/Amazon Linux
     curl -fsSL https://rpm.nodesource.com/setup_${NODE_MAJOR}.x | bash -
     yum install -y nodejs
   elif command -v dnf &>/dev/null; then
@@ -55,14 +54,11 @@ else
 fi
 
 # ── Step 2: Extract payload ─────────────────────────────────────────────────
-echo "  [2/5] Extracting property server..."
+echo "  [2/6] Extracting property server..."
 TEMP_DIR=$(mktemp -d)
 tail -c "$PAYLOAD_SIZE" "$0" > "$TEMP_DIR/payload.tar.gz"
 
-# Create install directory
 mkdir -p "$INSTALL_DIR"
-
-# Extract (backend/ is the top-level dir in the archive)
 tar -xzf "$TEMP_DIR/payload.tar.gz" -C "$INSTALL_DIR" --strip-components=0
 rm -rf "$TEMP_DIR"
 
@@ -70,7 +66,7 @@ echo "  Extracted to $INSTALL_DIR/backend/"
 
 # ── Step 3: Prompt for property key ─────────────────────────────────────────
 echo ""
-echo "  [3/5] Property Key Setup"
+echo "  [3/6] Property Key Setup"
 echo ""
 echo "  Get your property key from the Optima portal:"
 echo "  https://optima.sclera.com → Properties → Your Property → Key"
@@ -94,9 +90,54 @@ if [ -z "$PROPERTY_KEY" ]; then
   exit 1
 fi
 
-# ── Step 4: Verify key with central server ──────────────────────────────────
+# ── Step 4: Check port and handle conflicts ─────────────────────────────────
 echo ""
-echo "  [4/5] Verifying property key..."
+echo "  [4/6] Checking port $DEFAULT_PORT..."
+PORT=$DEFAULT_PORT
+
+while true; do
+  if ss -tlnp 2>/dev/null | grep -q ":${PORT} " || netstat -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+    echo "  ⚠️  Port $PORT is already in use!"
+    EXISTING_PID=$(ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -oP 'pid=\K[0-9]+' | head -1)
+    if [ -z "$EXISTING_PID" ]; then
+      EXISTING_PID=$(netstat -tlnp 2>/dev/null | grep ":${PORT} " | awk '{print $7}' | cut -d/ -f1 | head -1)
+    fi
+
+    if [ -n "$EXISTING_PID" ]; then
+      EXISTING_CMD=$(ps -p "$EXISTING_PID" -o comm= 2>/dev/null || echo "unknown")
+      echo "  Process: $EXISTING_CMD (PID: $EXISTING_PID)"
+    fi
+
+    echo ""
+    echo "  Options:"
+    echo "    1) Kill existing process and use port $PORT"
+    echo "    2) Use a different port"
+    echo ""
+    read -p "  Choose (1/2): " PORT_CHOICE
+
+    if [ "$PORT_CHOICE" = "1" ]; then
+      if [ -n "$EXISTING_PID" ]; then
+        kill -9 "$EXISTING_PID" 2>/dev/null || true
+        sleep 1
+        echo "  Killed process $EXISTING_PID."
+      fi
+      break
+    else
+      read -p "  Enter port number (1024-65535): " PORT
+      if [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ] 2>/dev/null; then
+        echo "  Invalid port. Using $DEFAULT_PORT."
+        PORT=$DEFAULT_PORT
+      fi
+    fi
+  else
+    echo "  Port $PORT is available."
+    break
+  fi
+done
+
+# ── Step 5: Verify key with central server ──────────────────────────────────
+echo ""
+echo "  [5/6] Verifying property key..."
 
 VERIFY_RESULT=$(curl -s -X POST https://optima.sclera.com/api/portal/verify-key \
   -H "Content-Type: application/json" \
@@ -115,14 +156,14 @@ fi
 cat > "$INSTALL_DIR/backend/.env" <<ENVEOF
 PROPERTY_KEY=$PROPERTY_KEY
 CENTRAL_SERVER_URL=https://optima.sclera.com
-PORT=5000
+PORT=$PORT
 ENVEOF
 
-echo "  Configuration saved."
+echo "  Configuration saved (port: $PORT)."
 
-# ── Step 5: Install systemd service ─────────────────────────────────────────
+# ── Step 6: Install systemd service ─────────────────────────────────────────
 echo ""
-echo "  [5/5] Installing system service..."
+echo "  [6/6] Installing system service..."
 
 cat > /etc/systemd/system/${SERVICE_NAME}.service <<SVCEOF
 [Unit]
@@ -155,7 +196,7 @@ echo "    Installation Complete!"
 echo "  ============================================"
 echo "  Install dir : $INSTALL_DIR/backend/"
 echo "  Service     : $SERVICE_NAME (systemd)"
-echo "  Port        : 5000"
+echo "  Port        : $PORT"
 echo "  Logs        : journalctl -u $SERVICE_NAME -f"
 echo ""
 echo "  The property server is now running."
