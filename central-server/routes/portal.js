@@ -275,4 +275,14 @@ router.delete('/users/:id/revoke/:property_id', authenticate, (req, res) => {
   res.json({ message: 'Access revoked' });
 });
 
+// GET /api/portal/properties/:id/direct-url — return ec2_url for direct browser connection
+// Used when the central proxy cannot reach the property (e.g. local/on-prem installs)
+router.get('/properties/:id/direct-url', authenticate, (req, res) => {
+  const db = getDb();
+  const prop = db.prepare("SELECT id, ec2_url FROM properties WHERE id=? AND status='active'").get(req.params.id);
+  if (!prop) return res.status(404).json({ error: 'Property not found' });
+  if (!prop.ec2_url) return res.status(404).json({ error: 'No server URL configured' });
+  res.json({ ec2_url: prop.ec2_url });
+});
+
 module.exports = router;
