@@ -21,6 +21,11 @@ electron/node_modules/
 deploy/agent/dist/
 *.pfx
 
+# ── Client instance build artifacts ──────────────────────────────────────────
+client_instance/dist/
+client_instance/payload/
+client_instance/node-installer/
+
 # ── SSO seed scripts (contain secrets) ───────────────────────────────────────
 central-server-auth-sso.js
 central-server/seed_sso.js

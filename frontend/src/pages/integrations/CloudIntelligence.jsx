@@ -496,8 +496,17 @@ function ShadowIT({ canManage }) {
   }
   useEffect(() => { load() }, [])
 
-  const updateStatus = async (id, status) => {
-    await api.put(`/cloud-intelligence/shadow-it/${id}`, { status })
+  const updateStatus = async (item, status) => {
+    await api.put(`/cloud-intelligence/shadow-it/${item.id}`, {
+      status,
+      app_name: item.app_name,
+      notes: item.notes,
+      category: item.category,
+      detected_via: item.detected_via,
+      users_count: item.users_count,
+      risk_level: item.risk_level,
+      monthly_cost_estimate: item.monthly_cost_estimate,
+    })
     load()
   }
 
@@ -594,12 +603,12 @@ function ShadowIT({ canManage }) {
                       {canManage && (
                         <td className="table-cell">
                           {a.status === 'detected' && (
-                            <button onClick={() => updateStatus(a.id, 'under_review')} className="btn-secondary text-xs py-1">
+                            <button onClick={() => updateStatus(a, 'under_review')} className="btn-secondary text-xs py-1">
                               <Eye size={12} /> Review
                             </button>
                           )}
                           {a.status === 'under_review' && (
-                            <button onClick={() => updateStatus(a.id, 'resolved')} className="btn-secondary text-xs py-1 text-green-600">
+                            <button onClick={() => updateStatus(a, 'resolved')} className="btn-secondary text-xs py-1 text-green-600">
                               <CheckCircle size={12} /> Resolve
                             </button>
                           )}

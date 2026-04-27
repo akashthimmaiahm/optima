@@ -717,6 +717,21 @@ router.get('/shadow-it', authenticate, async (req, res) => {
       }
     }
 
+    // Merge persisted statuses from DB
+    const db = getDb();
+    const persisted = db.prepare('SELECT id, app_name, notes, status FROM shadow_it').all();
+    const statusMap = {};
+    for (const p of persisted) {
+      statusMap[p.app_name + '|||' + (p.notes || '')] = { dbId: p.id, status: p.status };
+    }
+    for (const item of items) {
+      const key = item.app_name + '|||' + (item.notes || '');
+      if (statusMap[key]) {
+        item.id = statusMap[key].dbId;
+        item.status = statusMap[key].status;
+      }
+    }
+
     const summary = {
       total: items.length,
       high_risk: items.filter(a => a.risk_level === 'high').length,
@@ -732,7 +747,36 @@ router.get('/shadow-it', authenticate, async (req, res) => {
 });
 
 router.put('/shadow-it/:id', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
-  res.json({ message: 'Shadow IT record updated' });
+  const db = getDb();
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: 'status is required' });
+
+  // The id may be a DB id (persisted item) or an ephemeral id.
+  // Try DB first, fallback to upsert by matching app_name + notes from the request body.
+  const existing = db.prepare('SELECT id FROM shadow_it WHERE id = ?').get(req.params.id);
+  if (existing) {
+    db.prepare('UPDATE shadow_it SET status = ?, last_seen = datetime("now") WHERE id = ?')
+      .run(status, req.params.id);
+    return res.json({ message: 'Shadow IT record updated', id: existing.id });
+  }
+
+  // If not found by numeric id, the frontend may send item details for upsert
+  const { app_name, notes, category, detected_via, users_count, risk_level, monthly_cost_estimate } = req.body;
+  if (app_name && notes) {
+    const match = db.prepare('SELECT id FROM shadow_it WHERE app_name = ? AND notes = ?').get(app_name, notes);
+    if (match) {
+      db.prepare('UPDATE shadow_it SET status = ?, last_seen = datetime("now") WHERE id = ?')
+        .run(status, match.id);
+      return res.json({ message: 'Shadow IT record updated', id: match.id });
+    }
+    // Insert new
+    const result = db.prepare(
+      'INSERT INTO shadow_it (app_name, category, detected_via, users_count, risk_level, monthly_cost_estimate, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(app_name, category || '', detected_via || '', users_count || 0, risk_level || 'medium', monthly_cost_estimate || 0, status, notes);
+    return res.json({ message: 'Shadow IT record created', id: result.lastInsertRowid });
+  }
+
+  res.status(404).json({ error: 'Shadow IT record not found' });
 });
 
 // ── Combined intelligence summary — from ALL connected integrations ──────────
