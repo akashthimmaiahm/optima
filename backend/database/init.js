@@ -360,9 +360,148 @@ function initDatabase() {
     }
   } catch(e) {}
 
+  // ── Asset Loans table ───────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS asset_loans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_type TEXT NOT NULL,
+      asset_id INTEGER NOT NULL,
+      asset_name TEXT,
+      loaned_to TEXT NOT NULL,
+      loaned_to_email TEXT,
+      loaned_to_department TEXT,
+      loaned_by TEXT,
+      checkout_date TEXT NOT NULL DEFAULT (datetime('now')),
+      due_date TEXT,
+      checkin_date TEXT,
+      status TEXT DEFAULT 'checked_out',
+      condition_out TEXT DEFAULT 'good',
+      condition_in TEXT,
+      purpose TEXT,
+      notes TEXT,
+      property_id INTEGER REFERENCES properties(id),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ── Asset Relationships table ──────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS asset_relationships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type TEXT NOT NULL,
+      source_id INTEGER NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
+      relationship TEXT NOT NULL,
+      description TEXT,
+      created_by TEXT,
+      property_id INTEGER REFERENCES properties(id),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ── Dynamic Type Fields table ──────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS asset_type_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_type TEXT NOT NULL,
+      field_name TEXT NOT NULL,
+      field_label TEXT NOT NULL,
+      field_type TEXT DEFAULT 'text',
+      options TEXT,
+      required INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      property_id INTEGER REFERENCES properties(id),
+      UNIQUE(asset_type, field_name, property_id)
+    );
+  `);
+
+  // ── Hardware custom fields (JSON storage) ──────────────────────────────────
+  try { db.exec("ALTER TABLE hardware_assets ADD COLUMN custom_fields TEXT") } catch(e) {}
+
+  // Seed default type-specific fields
+  seedTypeFields(db);
+
   seedDefaultProperty(db);
   seedProductionUsers(db);
   console.log('✅ Database initialized successfully');
+}
+
+function seedTypeFields(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM asset_type_fields').get();
+  if (existing.c > 0) return;
+  const ins = db.prepare('INSERT OR IGNORE INTO asset_type_fields (asset_type, field_name, field_label, field_type, options, required, sort_order) VALUES (?,?,?,?,?,?,?)');
+  const fields = [
+    // Laptop
+    ['Laptop', 'battery_health', 'Battery Health', 'select', 'Excellent,Good,Fair,Poor,Replace', 0, 1],
+    ['Laptop', 'charger_included', 'Charger Included', 'select', 'Yes,No', 0, 2],
+    ['Laptop', 'screen_size', 'Screen Size', 'text', null, 0, 3],
+    ['Laptop', 'gpu', 'GPU', 'text', null, 0, 4],
+    ['Laptop', 'webcam', 'Webcam', 'select', 'Built-in,External,None', 0, 5],
+    // Desktop
+    ['Desktop', 'form_factor', 'Form Factor', 'select', 'Tower,SFF,Mini,AIO', 0, 1],
+    ['Desktop', 'gpu', 'GPU', 'text', null, 0, 2],
+    ['Desktop', 'psu_wattage', 'PSU Wattage', 'text', null, 0, 3],
+    ['Desktop', 'expansion_slots', 'Expansion Slots', 'text', null, 0, 4],
+    // Server
+    ['Server', 'rack_unit', 'Rack Unit (U)', 'text', null, 0, 1],
+    ['Server', 'rack_location', 'Rack Location', 'text', null, 0, 2],
+    ['Server', 'cpu_count', 'CPU Count', 'text', null, 0, 3],
+    ['Server', 'raid_config', 'RAID Configuration', 'select', 'RAID 0,RAID 1,RAID 5,RAID 6,RAID 10,None', 0, 4],
+    ['Server', 'power_supply', 'Power Supply', 'select', 'Single,Dual Redundant', 0, 5],
+    ['Server', 'ilo_ip', 'iLO/iDRAC IP', 'text', null, 0, 6],
+    ['Server', 'virtualization', 'Virtualization', 'select', 'VMware,Hyper-V,KVM,Proxmox,None', 0, 7],
+    // Network Switch
+    ['Network Switch', 'port_count', 'Port Count', 'text', null, 0, 1],
+    ['Network Switch', 'port_speed', 'Port Speed', 'select', '1GbE,10GbE,25GbE,40GbE,100GbE', 0, 2],
+    ['Network Switch', 'poe', 'PoE Support', 'select', 'Yes,No,PoE+,PoE++', 0, 3],
+    ['Network Switch', 'managed', 'Managed', 'select', 'Managed,Unmanaged,Smart Managed', 0, 4],
+    ['Network Switch', 'layer', 'Layer', 'select', 'Layer 2,Layer 3', 0, 5],
+    ['Network Switch', 'stacking', 'Stacking', 'select', 'Yes,No', 0, 6],
+    // Router
+    ['Router', 'wan_ports', 'WAN Ports', 'text', null, 0, 1],
+    ['Router', 'lan_ports', 'LAN Ports', 'text', null, 0, 2],
+    ['Router', 'wifi_standard', 'WiFi Standard', 'select', 'WiFi 5,WiFi 6,WiFi 6E,WiFi 7,None', 0, 3],
+    ['Router', 'throughput', 'Max Throughput', 'text', null, 0, 4],
+    ['Router', 'vpn_support', 'VPN Support', 'select', 'IPSec,SSL,WireGuard,None', 0, 5],
+    // Firewall
+    ['Firewall', 'throughput', 'Firewall Throughput', 'text', null, 0, 1],
+    ['Firewall', 'vpn_throughput', 'VPN Throughput', 'text', null, 0, 2],
+    ['Firewall', 'max_connections', 'Max Connections', 'text', null, 0, 3],
+    ['Firewall', 'subscription_expiry', 'Security Subscription Expiry', 'date', null, 0, 4],
+    ['Firewall', 'ha_mode', 'HA Mode', 'select', 'Active-Passive,Active-Active,Standalone', 0, 5],
+    // Printer
+    ['Printer', 'print_type', 'Print Type', 'select', 'Laser,Inkjet,Thermal,Dot Matrix', 0, 1],
+    ['Printer', 'color', 'Color', 'select', 'Color,Monochrome', 0, 2],
+    ['Printer', 'duplex', 'Duplex', 'select', 'Auto,Manual,No', 0, 3],
+    ['Printer', 'network_print', 'Network Print', 'select', 'Ethernet,WiFi,Both,USB Only', 0, 4],
+    ['Printer', 'ppm', 'Pages Per Minute', 'text', null, 0, 5],
+    // Monitor
+    ['Monitor', 'screen_size', 'Screen Size', 'text', null, 0, 1],
+    ['Monitor', 'resolution', 'Resolution', 'select', '1080p,1440p,4K,5K,Ultrawide', 0, 2],
+    ['Monitor', 'panel_type', 'Panel Type', 'select', 'IPS,VA,TN,OLED', 0, 3],
+    ['Monitor', 'ports', 'Ports', 'text', null, 0, 4],
+    ['Monitor', 'adjustable_stand', 'Adjustable Stand', 'select', 'Yes,No', 0, 5],
+    // Mobile
+    ['Mobile', 'imei', 'IMEI', 'text', null, 0, 1],
+    ['Mobile', 'phone_number', 'Phone Number', 'text', null, 0, 2],
+    ['Mobile', 'carrier', 'Carrier', 'text', null, 0, 3],
+    ['Mobile', 'screen_size', 'Screen Size', 'text', null, 0, 4],
+    ['Mobile', 'mdm_enrolled', 'MDM Enrolled', 'select', 'Yes,No', 0, 5],
+    // Tablet
+    ['Tablet', 'screen_size', 'Screen Size', 'text', null, 0, 1],
+    ['Tablet', 'cellular', 'Cellular', 'select', 'WiFi Only,WiFi + Cellular', 0, 2],
+    ['Tablet', 'stylus', 'Stylus Support', 'select', 'Yes,No', 0, 3],
+    ['Tablet', 'keyboard', 'Keyboard Attached', 'select', 'Yes,No', 0, 4],
+    // Storage
+    ['Storage', 'total_capacity', 'Total Capacity', 'text', null, 0, 1],
+    ['Storage', 'usable_capacity', 'Usable Capacity', 'text', null, 0, 2],
+    ['Storage', 'storage_protocol', 'Protocol', 'select', 'iSCSI,FC,NFS,SMB,S3', 0, 3],
+    ['Storage', 'raid_level', 'RAID Level', 'select', 'RAID 0,RAID 1,RAID 5,RAID 6,RAID 10', 0, 4],
+    ['Storage', 'drive_type', 'Drive Type', 'select', 'SSD,HDD,NVMe,Hybrid', 0, 5],
+  ];
+  fields.forEach(f => ins.run(...f));
+  console.log('✅ Asset type fields seeded');
 }
 
 function seedDefaultProperty(db) {

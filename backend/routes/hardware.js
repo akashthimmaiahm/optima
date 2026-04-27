@@ -45,32 +45,46 @@ router.get('/:id', authenticate, (req, res) => {
   const asset = db.prepare('SELECT * FROM hardware_assets WHERE id = ?').get(req.params.id);
   if (!asset) return res.status(404).json({ error: 'Asset not found' });
   const maintenance = db.prepare('SELECT * FROM maintenance_records WHERE hardware_id = ? ORDER BY date DESC').all(req.params.id);
-  res.json({ ...asset, maintenance });
+  // Loan history
+  const loans = db.prepare('SELECT * FROM asset_loans WHERE asset_type=? AND asset_id=? ORDER BY checkout_date DESC').all('hardware', req.params.id);
+  const active_loan = loans.find(l => l.status === 'checked_out') || null;
+  // Relationships
+  const relationships = db.prepare(
+    'SELECT * FROM asset_relationships WHERE (source_type=? AND source_id=?) OR (target_type=? AND target_id=?) ORDER BY created_at DESC'
+  ).all('hardware', req.params.id, 'hardware', req.params.id);
+  // Type-specific fields
+  const type_fields = db.prepare('SELECT * FROM asset_type_fields WHERE asset_type=? ORDER BY sort_order').all(asset.type);
+  // Parse custom_fields JSON
+  let custom_fields = {};
+  try { custom_fields = asset.custom_fields ? JSON.parse(asset.custom_fields) : {}; } catch { }
+  res.json({ ...asset, custom_fields, maintenance, loans, active_loan, relationships, type_fields });
 });
 
 router.post('/', authenticate, authorize('super_admin', 'it_admin', 'it_manager', 'asset_manager'), (req, res) => {
   const db = getDb();
-  const { asset_tag, name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes } = req.body;
+  const { asset_tag, name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes, custom_fields } = req.body;
   if (!name || !asset_tag || !type) return res.status(400).json({ error: 'Name, asset_tag, and type are required' });
+  const customJson = custom_fields ? JSON.stringify(custom_fields) : null;
   const result = db.prepare(`
     INSERT INTO hardware_assets
-      (asset_tag, name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(asset_tag, name, type, manufacturer, model, serial_number, status||'active', condition||'good', location, assigned_to, department, purchase_date, purchase_cost||0, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol||0, eol_date||null, eol_replacement||null, eol_notes||null);
+      (asset_tag, name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes, custom_fields)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(asset_tag, name, type, manufacturer, model, serial_number, status||'active', condition||'good', location, assigned_to, department, purchase_date, purchase_cost||0, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol||0, eol_date||null, eol_replacement||null, eol_notes||null, customJson);
   db.prepare(`INSERT INTO audit_logs (user_id, user_name, action, resource_type, resource_id, details) VALUES (?, ?, 'create', 'hardware', ?, ?)`).run(req.user.id, req.user.name, result.lastInsertRowid, `Created hardware asset: ${name}`);
   res.status(201).json({ id: result.lastInsertRowid, message: 'Hardware asset added successfully' });
 });
 
 router.put('/:id', authenticate, authorize('super_admin', 'it_admin', 'it_manager', 'asset_manager'), (req, res) => {
   const db = getDb();
-  const { name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes } = req.body;
+  const { name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol, eol_date, eol_replacement, eol_notes, custom_fields } = req.body;
+  const customJson = custom_fields ? JSON.stringify(custom_fields) : null;
   db.prepare(`
     UPDATE hardware_assets SET
       name=?, type=?, manufacturer=?, model=?, serial_number=?, status=?, condition=?, location=?, assigned_to=?, department=?,
       purchase_date=?, purchase_cost=?, warranty_expiry=?, ip_address=?, mac_address=?, os=?, processor=?, ram=?, storage=?, notes=?,
-      is_eol=?, eol_date=?, eol_replacement=?, eol_notes=?, updated_at=datetime('now')
+      is_eol=?, eol_date=?, eol_replacement=?, eol_notes=?, custom_fields=?, updated_at=datetime('now')
     WHERE id=?
-  `).run(name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol||0, eol_date||null, eol_replacement||null, eol_notes||null, req.params.id);
+  `).run(name, type, manufacturer, model, serial_number, status, condition, location, assigned_to, department, purchase_date, purchase_cost, warranty_expiry, ip_address, mac_address, os, processor, ram, storage, notes, is_eol||0, eol_date||null, eol_replacement||null, eol_notes||null, customJson, req.params.id);
   res.json({ message: 'Hardware asset updated successfully' });
 });
 

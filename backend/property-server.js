@@ -247,6 +247,7 @@ async function main() {
   app.use('/api/agent',              require('./routes/agent'));
   app.use('/api/update',             require('./routes/update'));
   app.use('/api/backup',             require('./routes/backup'));
+  app.use('/api/asset-management',   require('./routes/asset_management'));
 
   const CLIENT_VERSION = '7.1.2';
 
