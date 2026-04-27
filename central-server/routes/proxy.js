@@ -107,7 +107,7 @@ function proxyMiddleware(req, res) {
     path:     upstreamUrl.pathname + upstreamUrl.search,
     method:   req.method,
     headers:  fwdHeaders,
-    timeout:  30000,
+    timeout:  5000,
   }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
