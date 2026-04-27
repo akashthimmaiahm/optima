@@ -44,6 +44,19 @@ export function AuthProvider({ children }) {
     return { user, properties }
   }
 
+  const loginWithToken = (token, userData, properties = []) => {
+    localStorage.setItem('optima_token', token)
+    localStorage.setItem('optima_user', JSON.stringify(userData))
+    localStorage.setItem('optima_properties', JSON.stringify(properties))
+    setUser(userData)
+    setAccessibleProperties(properties)
+    if (properties.length === 1) {
+      setSelectedProperty(properties[0])
+    } else {
+      setSelectedProperty(null)
+    }
+  }
+
   const logout = () => {
     localStorage.removeItem('optima_token')
     localStorage.removeItem('optima_user')
@@ -65,6 +78,7 @@ export function AuthProvider({ children }) {
       selectedProperty,
       setSelectedProperty,
       login,
+      loginWithToken,
       logout,
       hasRole,
     }}>

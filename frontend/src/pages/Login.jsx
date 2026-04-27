@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, ArrowRight, Zap } from 'lucide-react'
 import logoUrl from '../assets/optima-logo.png'
 import { useTheme } from '../contexts/ThemeContext'
+import api from '../api/axios'
 
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' })
@@ -11,9 +12,39 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [ssoLoading, setSsoLoading] = useState('')
-  const { login } = useAuth()
+  const { login, loginWithToken } = useAuth()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // Handle SSO callback (code in URL)
+  useEffect(() => {
+    const code = searchParams.get('code')
+    const state = searchParams.get('state')
+    if (code) {
+      // Determine which SSO provider based on state prefix
+      const isMicrosoft = state?.startsWith('ms_')
+      const provider = isMicrosoft ? 'Microsoft' : 'Sclera'
+      const callbackUrl = isMicrosoft ? '/auth/sso/microsoft/callback' : '/auth/sso/sclera/callback'
+      setSsoLoading(provider)
+      const redirectUri = `${window.location.origin}/login`
+      api.post(callbackUrl, { code, redirect_uri: redirectUri })
+        .then(r => {
+          if (r.data.token && r.data.user) {
+            loginWithToken(r.data.token, r.data.user, r.data.properties || [])
+            if ((r.data.properties || []).length === 1) {
+              navigate('/')
+            } else {
+              navigate('/select-property')
+            }
+          }
+        })
+        .catch(err => {
+          setError(err.response?.data?.error || 'SSO login failed')
+          setSsoLoading('')
+        })
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -33,12 +64,20 @@ export default function Login() {
     }
   }
 
-  const handleSSO = (provider) => {
+  const handleSSO = async (provider) => {
     setSsoLoading(provider)
-    setTimeout(() => {
-      setSsoLoading('')
-      setError(`${provider} SSO integration is being configured. Contact your administrator.`)
-    }, 1500)
+    try {
+      const redirectUri = `${window.location.origin}/login`
+      const endpoint = provider === 'Microsoft' ? '/auth/sso/microsoft' : '/auth/sso/sclera'
+      const r = await api.get(endpoint, { params: { redirect_uri: redirectUri } })
+      if (r.data.auth_url) {
+        window.location.href = r.data.auth_url
+        return
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || `Failed to initiate ${provider} SSO`)
+    }
+    setSsoLoading('')
   }
 
   return (

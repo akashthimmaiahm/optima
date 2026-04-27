@@ -35,15 +35,15 @@ router.get('/:id', authenticate, superAdminOnly, (req, res) => {
 // POST /api/properties — create new property
 router.post('/', authenticate, superAdminOnly, (req, res) => {
   const db = getDb();
-  const { name, slug, domain, plan = 'standard', admin_email, max_assets = 10000, timezone = 'UTC', notes } = req.body;
+  const { name, slug, domain, plan = 'standard', admin_email, max_assets = 10000, timezone = 'UTC', currency = 'USD', notes } = req.body;
   if (!name || !slug) return res.status(400).json({ error: 'name and slug are required' });
 
   // Validate slug format
   if (!/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens only' });
 
   try {
-    const stmt = db.prepare(`INSERT INTO properties (name, slug, domain, plan, status, admin_email, max_assets, timezone, notes) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)`);
-    const result = stmt.run(name, slug, domain || null, plan, admin_email || null, max_assets, timezone, notes || null);
+    const stmt = db.prepare(`INSERT INTO properties (name, slug, domain, plan, status, admin_email, max_assets, timezone, currency, notes) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`);
+    const result = stmt.run(name, slug, domain || null, plan, admin_email || null, max_assets, timezone, currency || 'USD', notes || null);
     const newProp = db.prepare('SELECT * FROM properties WHERE id=?').get(result.lastInsertRowid);
     res.status(201).json(newProp);
   } catch (err) {
@@ -55,16 +55,23 @@ router.post('/', authenticate, superAdminOnly, (req, res) => {
 // PUT /api/properties/:id
 router.put('/:id', authenticate, superAdminOnly, (req, res) => {
   const db = getDb();
-  const { name, slug, domain, plan, status, admin_email, max_assets, timezone, notes } = req.body;
+  const { name, slug, domain, plan, status, admin_email, max_assets, timezone, currency, notes } = req.body;
   if (slug && !/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens only' });
   try {
-    db.prepare(`UPDATE properties SET name=COALESCE(?,name), slug=COALESCE(?,slug), domain=COALESCE(?,domain), plan=COALESCE(?,plan), status=COALESCE(?,status), admin_email=COALESCE(?,admin_email), max_assets=COALESCE(?,max_assets), timezone=COALESCE(?,timezone), notes=COALESCE(?,notes), updated_at=datetime('now') WHERE id=?`).run(name, slug, domain, plan, status, admin_email, max_assets, timezone, notes, req.params.id);
+    db.prepare(`UPDATE properties SET name=COALESCE(?,name), slug=COALESCE(?,slug), domain=COALESCE(?,domain), plan=COALESCE(?,plan), status=COALESCE(?,status), admin_email=COALESCE(?,admin_email), max_assets=COALESCE(?,max_assets), timezone=COALESCE(?,timezone), currency=COALESCE(?,currency), notes=COALESCE(?,notes), updated_at=datetime('now') WHERE id=?`).run(name, slug, domain, plan, status, admin_email, max_assets, timezone, currency, notes, req.params.id);
     const updated = db.prepare('SELECT * FROM properties WHERE id=?').get(req.params.id);
     res.json(updated);
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Slug already in use' });
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/properties/currency — get currency for current property (or first active)
+router.get('/currency', authenticate, (req, res) => {
+  const db = getDb();
+  const prop = db.prepare("SELECT currency FROM properties WHERE status='active' ORDER BY id LIMIT 1").get();
+  res.json({ currency: prop?.currency || 'USD' });
 });
 
 // DELETE /api/properties/:id  (soft delete — set status=archived)

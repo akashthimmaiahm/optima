@@ -24,6 +24,8 @@ const ALL_WIDGETS = [
   { id: 'wasted_licenses',  label: 'Underutilized Licenses', desc: 'Licenses costing money but unused' },
   { id: 'expiring_assets',  label: 'Expiring Assets',     desc: 'High-cost assets expiring soon' },
   { id: 'hardware_charts',  label: 'Hardware Charts',     desc: 'Hardware by status and value' },
+  { id: 'cost_analyzer',    label: 'Cost Analyzer',        desc: 'Per-asset total cost breakdown (HW+SW+Cloud)' },
+  { id: 'compliance',       label: 'Compliance Status',    desc: 'Asset compliance score, EOL, warranty alerts' },
   { id: 'cloud_infra',      label: 'Cloud Infrastructure', desc: 'Real-time cloud resources from integrations' },
   { id: 'recent_activity',  label: 'Recent Activity',     desc: 'Latest audit log entries' },
 ]
@@ -114,15 +116,21 @@ function EditPanel({ enabled, onToggle, onClose, onReset }) {
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
+  const [costData, setCostData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets)
   const navigate = useNavigate()
 
   useEffect(() => {
-    api.get('/dashboard/stats')
-      .then(r => { setStats(r.data); setLoading(false) })
-      .catch(() => setLoading(false))
+    Promise.all([
+      api.get('/dashboard/stats'),
+      api.get('/dashboard/cost-analyzer').catch(() => ({ data: null })),
+    ]).then(([statsR, costR]) => {
+      setStats(statsR.data)
+      setCostData(costR.data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [])
 
   const toggleWidget = (id) => {
@@ -147,6 +155,9 @@ export default function Dashboard() {
   )
 
   const c = stats?.cost || {}
+  const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', INR: '₹', AED: 'د.إ', SAR: '﷼', JPY: '¥', CNY: '¥', CAD: 'C$', AUD: 'A$', SGD: 'S$', CHF: 'CHF', NPR: 'रू', BRL: 'R$', ZAR: 'R', MYR: 'RM', THB: '฿', KRW: '₩' }
+  const cur = stats?.currency || 'USD'
+  const sym = CURRENCY_SYMBOLS[cur] || '$'
 
   return (
     <div className="space-y-5">
@@ -195,7 +206,7 @@ export default function Dashboard() {
           <StatsCard title="Cloud Integrations" value={stats?.connectedIntegrations || 0} subtitle={stats?.cloud?.providers?.length ? stats.cloud.providers.join(', ') : 'Connected apps'} icon={Cloud} color="blue" />
           <StatsCard title="Expiring Licenses" value={stats?.expiringLicenses || 0} subtitle="Within 90 days" icon={AlertTriangle} color="yellow" />
           <StatsCard title="License Utilization" value={`${stats?.licenseCompliance || 0}%`} subtitle="Across all software" icon={TrendingUp} color="green" />
-          <StatsCard title="Active Contracts" value={`$${((stats?.totalContractValue || 0) / 1000).toFixed(0)}K`} subtitle={`${stats?.expiringContracts || 0} expiring soon`} icon={DollarSign} color="purple" />
+          <StatsCard title="Active Contracts" value={`${sym}${((stats?.totalContractValue || 0) / 1000).toFixed(0)}K`} subtitle={`${stats?.expiringContracts || 0} expiring soon`} icon={DollarSign} color="purple" />
         </div>
       )}
 
@@ -212,12 +223,12 @@ export default function Dashboard() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             {[
-              { label: 'Software Spend',   value: `$${(c.softwareMonthly || 0).toLocaleString()}`,                sub: 'per month',       color: 'text-blue-400',   bg: 'bg-blue-900/20' },
-              { label: 'Cloud Spend',      value: `$${(c.cloudMonthly || 0).toLocaleString()}`,                   sub: 'per month',       color: 'text-purple-400', bg: 'bg-purple-900/20' },
-              { label: 'Hardware Value',   value: `$${((c.hardwareTotal || 0) / 1000).toFixed(0)}K`,              sub: 'total assets',    color: 'text-orange-400', bg: 'bg-orange-900/20' },
-              { label: 'Wasted Licenses',  value: `$${(c.wastedLicenseCost || 0).toLocaleString()}`,             sub: 'underutilized',   color: 'text-red-400',    bg: 'bg-red-900/20' },
-              { label: 'Potential Savings',value: `$${(c.potentialSavings || 0).toLocaleString()}`,              sub: 'can be saved',    color: 'text-green-400',  bg: 'bg-green-900/20' },
-              { label: 'Shadow IT Cost',   value: `$${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toLocaleString()}`, sub: `${stats?.shadowIT?.count || 0} risks detected`, color: 'text-yellow-400', bg: 'bg-yellow-900/20' },
+              { label: 'Software Spend',   value: `${sym}${(c.softwareMonthly || 0).toLocaleString()}`,                sub: 'per month',       color: 'text-blue-400',   bg: 'bg-blue-900/20' },
+              { label: 'Cloud Spend',      value: `${sym}${(c.cloudMonthly || 0).toLocaleString()}`,                   sub: 'per month',       color: 'text-purple-400', bg: 'bg-purple-900/20' },
+              { label: 'Hardware Value',   value: `${sym}${((c.hardwareTotal || 0) / 1000).toFixed(0)}K`,              sub: 'total assets',    color: 'text-orange-400', bg: 'bg-orange-900/20' },
+              { label: 'Wasted Licenses',  value: `${sym}${(c.wastedLicenseCost || 0).toLocaleString()}`,             sub: 'underutilized',   color: 'text-red-400',    bg: 'bg-red-900/20' },
+              { label: 'Potential Savings',value: `${sym}${(c.potentialSavings || 0).toLocaleString()}`,              sub: 'can be saved',    color: 'text-green-400',  bg: 'bg-green-900/20' },
+              { label: 'Shadow IT Cost',   value: `${sym}${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toLocaleString()}`, sub: `${stats?.shadowIT?.count || 0} risks detected`, color: 'text-yellow-400', bg: 'bg-yellow-900/20' },
             ].map(k => (
               <div key={k.label} className={`rounded-xl p-4 ${k.bg}`}>
                 <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
@@ -238,9 +249,9 @@ export default function Dashboard() {
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick Wins</p>
                 {[
-                  { label: 'Reclaim unused licenses',    value: `Save $${(c.reclaimPotential || 0).toFixed(0)}/mo`,        color: 'text-green-400',  icon: TrendingDown, action: () => navigate('/cloud-intelligence') },
+                  { label: 'Reclaim unused licenses',    value: `Save ${sym}${(c.reclaimPotential || 0).toFixed(0)}/mo`,        color: 'text-green-400',  icon: TrendingDown, action: () => navigate('/cloud-intelligence') },
                   { label: 'Review underutilized apps',  value: `${(c.wastedLicenses || []).length} apps`,                  color: 'text-yellow-400', icon: Target,       action: () => navigate('/licenses') },
-                  { label: 'Resolve Shadow IT',          value: `${stats?.shadowIT?.count || 0} risks — $${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toFixed(0)}/mo`, color: 'text-red-400', icon: ShieldAlert, action: () => navigate('/cloud-intelligence') },
+                  { label: 'Resolve Shadow IT',          value: `${stats?.shadowIT?.count || 0} risks — ${sym}${(stats?.shadowIT?.monthlyCost || c.shadowCost || 0).toFixed(0)}/mo`, color: 'text-red-400', icon: ShieldAlert, action: () => navigate('/cloud-intelligence') },
                   { label: 'Renew expiring contracts',   value: `${stats?.expiringContracts || 0} contracts`,              color: 'text-orange-400', icon: AlertTriangle,action: () => navigate('/contracts') },
                 ].map(w => (
                   <button key={w.label} onClick={w.action} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#22222e] transition-colors text-left">
@@ -262,12 +273,12 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={show('optimization') ? 240 : 200}>
                 <BarChart data={c.spendByCategory || []} layout="vertical" margin={{ left: 0, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#2a2a35" />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `${sym}${(v/1000).toFixed(0)}K`} />
                   <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: '#9ca3af' }} width={90} />
                   <Tooltip
                     contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }}
                     labelStyle={{ color: 'var(--tooltip-text, #fff)' }}
-                    formatter={v => [`$${v.toLocaleString()}`, 'Monthly Cost']}
+                    formatter={v => [`${sym}${v.toLocaleString()}`, 'Monthly Cost']}
                   />
                   <Bar dataKey="monthly_cost" radius={[0, 4, 4, 0]}>
                     {(c.spendByCategory || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
@@ -291,7 +302,7 @@ export default function Dashboard() {
                     <span className="text-xs font-bold text-gray-500 w-4">#{i + 1}</span>
                     <p className="text-xs font-medium text-gray-300 truncate">{s.name}</p>
                   </div>
-                  <p className="text-xs font-bold text-white ml-2 flex-shrink-0">${(s.monthly_cost || 0).toLocaleString()}<span className="text-gray-500 font-normal">/mo</span></p>
+                  <p className="text-xs font-bold text-white ml-2 flex-shrink-0">{sym}{(s.monthly_cost || 0).toLocaleString()}<span className="text-gray-500 font-normal">/mo</span></p>
                 </div>
                 <UtilBar pct={s.utilization_pct || 0} />
               </div>
@@ -307,7 +318,7 @@ export default function Dashboard() {
             <h3 className="font-semibold text-white text-sm flex items-center gap-2">
               <TrendingDown size={16} className="text-red-400" /> Underutilized Licenses
             </h3>
-            <Badge variant="danger">${(c.wastedLicenseCost || 0).toLocaleString()}/mo wasted</Badge>
+            <Badge variant="danger">{sym}{(c.wastedLicenseCost || 0).toLocaleString()}/mo wasted</Badge>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -332,7 +343,7 @@ export default function Dashboard() {
                     <td className="table-cell text-gray-400">{w.used_licenses}</td>
                     <td className="table-cell w-32"><UtilBar pct={w.utilization_pct || 0} /></td>
                     <td className="table-cell">
-                      <span className="text-red-400 font-bold">${(w.wasted_cost || 0).toLocaleString()}</span>
+                      <span className="text-red-400 font-bold">{sym}{(w.wasted_cost || 0).toLocaleString()}</span>
                       <span className="text-xs text-gray-500">/mo</span>
                     </td>
                     <td className="table-cell">
@@ -365,7 +376,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0 ml-2">
-                  <p className="text-sm font-bold text-white">${(a.monthly_cost || 0).toLocaleString()}/mo</p>
+                  <p className="text-sm font-bold text-white">{sym}{(a.monthly_cost || 0).toLocaleString()}/mo</p>
                   <p className={`text-xs font-medium ${a.days_left <= 30 ? 'text-red-400' : 'text-yellow-400'}`}>{a.days_left}d left</p>
                 </div>
               </div>
@@ -395,14 +406,172 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={(c.hardwareCostByType || []).slice(0, 6)} layout="vertical" margin={{ left: 0, right: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#2a2a35" />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `${sym}${(v/1000).toFixed(0)}K`} />
                 <YAxis type="category" dataKey="type" tick={{ fontSize: 10, fill: '#9ca3af' }} width={80} />
-                <Tooltip contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }} labelStyle={{ color: 'var(--tooltip-text, #fff)' }} formatter={v => [`$${v.toLocaleString()}`, 'Total Value']} />
+                <Tooltip contentStyle={{ background: 'var(--tooltip-bg, #1a1a1f)', border: '1px solid var(--tooltip-border, #2a2a35)', borderRadius: 8 }} labelStyle={{ color: 'var(--tooltip-text, #fff)' }} formatter={v => [`${sym}${v.toLocaleString()}`, 'Total Value']} />
                 <Bar dataKey="total_cost" radius={[0, 4, 4, 0]}>
                   {(c.hardwareCostByType || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cost Analyzer ── */}
+      {show('cost_analyzer') && costData && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <DollarSign size={16} className="text-emerald-500" /> Asset Cost Analyzer
+            </h2>
+            <button onClick={() => navigate('/hardware')} className="text-xs text-blue-400 hover:underline flex items-center gap-1">
+              View All <ArrowRight size={11} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="rounded-xl p-4 bg-blue-900/20">
+              <p className="text-xl font-bold text-blue-400">{sym}{((costData.summary?.total_hw_value || 0) / 1000).toFixed(0)}K</p>
+              <p className="text-xs font-medium text-gray-300 mt-0.5">Hardware Value</p>
+            </div>
+            <div className="rounded-xl p-4 bg-green-900/20">
+              <p className="text-xl font-bold text-green-400">{sym}{(costData.summary?.total_monthly_cost || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+              <p className="text-xs font-medium text-gray-300 mt-0.5">Total Monthly TCO</p>
+            </div>
+            <div className="rounded-xl p-4 bg-purple-900/20">
+              <p className="text-xl font-bold text-purple-400">{sym}{((costData.summary?.total_annual_cost || 0) / 1000).toFixed(1)}K</p>
+              <p className="text-xs font-medium text-gray-300 mt-0.5">Annual TCO</p>
+            </div>
+            <div className="rounded-xl p-4 bg-orange-900/20">
+              <p className="text-xl font-bold text-orange-400">{costData.summary?.total_assets || 0}</p>
+              <p className="text-xs font-medium text-gray-300 mt-0.5">Tracked Assets</p>
+            </div>
+          </div>
+          {/* Top 5 Costliest Assets */}
+          {(costData.top_costly || []).length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-[#2a2a35]">
+                <h3 className="font-semibold text-white text-sm">Top Costliest Assets (HW + SW + License)</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#2a2a35]">
+                      <th className="table-header">Asset</th>
+                      <th className="table-header">Type</th>
+                      <th className="table-header">HW Cost/mo</th>
+                      <th className="table-header">SW Cost/mo</th>
+                      <th className="table-header">Total/mo</th>
+                      <th className="table-header">Linked Items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(costData.top_costly || []).slice(0, 5).map(a => (
+                      <tr key={a.id} className="table-row">
+                        <td className="table-cell">
+                          <p className="font-medium text-white">{a.name}</p>
+                          <p className="text-xs text-gray-500">{a.asset_tag}</p>
+                        </td>
+                        <td className="table-cell"><Badge variant="info">{a.type}</Badge></td>
+                        <td className="table-cell text-blue-400 font-medium">{sym}{a.hw_monthly_cost?.toFixed(0)}</td>
+                        <td className="table-cell text-purple-400 font-medium">{sym}{(a.software_cost + a.license_cost)?.toFixed(0)}</td>
+                        <td className="table-cell">
+                          <span className="text-green-400 font-bold">{sym}{a.total_monthly_cost?.toFixed(0)}</span>
+                          <span className="text-gray-500 text-xs">/mo</span>
+                        </td>
+                        <td className="table-cell text-xs text-gray-400">
+                          {a.linked_software?.length > 0 && <span className="mr-2">{a.linked_software.length} SW</span>}
+                          {a.linked_licenses?.length > 0 && <span className="mr-2">{a.linked_licenses.length} Lic</span>}
+                          {a.linked_contracts?.length > 0 && <span>{a.linked_contracts.length} Cont</span>}
+                          {!a.linked_software?.length && !a.linked_licenses?.length && !a.linked_contracts?.length && '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {/* Cost by Department */}
+          {(costData.cost_by_department || []).length > 0 && (
+            <div className="card p-5 mt-4">
+              <h3 className="font-semibold text-white mb-4 text-sm">Cost by Department</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={(costData.cost_by_department || []).slice(0, 8)} layout="vertical" margin={{ left: 0, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#2a2a35" />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `${sym}${v.toFixed(0)}`} />
+                  <YAxis type="category" dataKey="department" tick={{ fontSize: 10, fill: '#9ca3af' }} width={100} />
+                  <Tooltip contentStyle={{ background: '#1a1a1f', border: '1px solid #2a2a35', borderRadius: 8 }} labelStyle={{ color: '#fff' }} formatter={v => [`${sym}${v.toFixed(0)}/mo`, 'Monthly Cost']} />
+                  <Bar dataKey="hw_cost" stackId="a" fill="#3b82f6" name="Hardware" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="sw_cost" stackId="a" fill="#8b5cf6" name="Software" radius={[0, 4, 4, 0]} />
+                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Compliance Status ── */}
+      {show('compliance') && costData && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="card p-5">
+            <h3 className="font-semibold text-white mb-4 text-sm flex items-center gap-2">
+              <ShieldAlert size={16} className="text-yellow-400" /> Compliance Overview
+            </h3>
+            <div className="flex items-center justify-center mb-4">
+              <ScoreGauge score={costData.summary?.avg_compliance_score || 0} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl p-3 bg-red-900/20 text-center">
+                <p className="text-xl font-bold text-red-400">{costData.summary?.eol_count || 0}</p>
+                <p className="text-xs text-gray-400">End of Life</p>
+              </div>
+              <div className="rounded-xl p-3 bg-yellow-900/20 text-center">
+                <p className="text-xl font-bold text-yellow-400">{costData.summary?.expired_warranty || 0}</p>
+                <p className="text-xs text-gray-400">Expired Warranty</p>
+              </div>
+              <div className="rounded-xl p-3 bg-orange-900/20 text-center">
+                <p className="text-xl font-bold text-orange-400">{costData.summary?.poor_condition || 0}</p>
+                <p className="text-xs text-gray-400">Poor Condition</p>
+              </div>
+              <div className="rounded-xl p-3 bg-green-900/20 text-center">
+                <p className="text-xl font-bold text-green-400">
+                  {(costData.summary?.total_assets || 0) - (costData.summary?.eol_count || 0) - (costData.summary?.expired_warranty || 0) - (costData.summary?.poor_condition || 0)}
+                </p>
+                <p className="text-xs text-gray-400">Fully Compliant</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-5">
+            <h3 className="font-semibold text-white mb-4 text-sm">Non-Compliant Assets</h3>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {(costData.assets || [])
+                .filter(a => a.compliance_score < 80)
+                .sort((a, b) => a.compliance_score - b.compliance_score)
+                .slice(0, 10)
+                .map(a => (
+                  <div key={a.id} className="flex items-center justify-between p-2.5 bg-[#0d0d0d] border border-[#2a2a35] rounded-lg">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${a.compliance_score >= 70 ? 'bg-yellow-900/30 text-yellow-400' : a.compliance_score >= 50 ? 'bg-orange-900/30 text-orange-400' : 'bg-red-900/30 text-red-400'}`}>
+                        {a.compliance_score}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-200 truncate">{a.name}</p>
+                        <p className="text-xs text-gray-500">{a.asset_tag} — {a.type}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0 ml-2">
+                      {a.compliance.filter(c => c.type === 'danger' || c.type === 'warning').map((c, i) => (
+                        <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${c.type === 'danger' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400'}`}>{c.label}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              {(costData.assets || []).filter(a => a.compliance_score < 80).length === 0 && (
+                <p className="text-center text-gray-500 py-6">All assets are compliant!</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -435,7 +604,7 @@ export default function Dashboard() {
               </div>
             ))}
             <div className="rounded-xl p-4 bg-green-900/20">
-              <p className="text-2xl font-bold text-green-400">${(stats.cloud.totalCloudCost || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green-400">{sym}{(stats.cloud.totalCloudCost || 0).toLocaleString()}</p>
               <p className="text-xs font-medium text-gray-300 mt-1">Est. Monthly Cost</p>
             </div>
           </div>

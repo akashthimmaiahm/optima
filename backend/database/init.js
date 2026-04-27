@@ -332,6 +332,15 @@ function initDatabase() {
   try { db.exec("ALTER TABLE shadow_it ADD COLUMN property_id INTEGER REFERENCES properties(id)") } catch(e) {}
   try { db.exec("ALTER TABLE users ADD COLUMN property_id INTEGER REFERENCES properties(id)") } catch(e) {}
   try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN property_id INTEGER REFERENCES properties(id)") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN payment_card TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN payment_method TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN billing_cycle TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN next_payment_date TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN billing_email TEXT") } catch(e) {}
+  try { db.exec("ALTER TABLE cloud_integrations ADD COLUMN monthly_budget REAL") } catch(e) {}
+
+  // Currency support for properties
+  try { db.exec("ALTER TABLE properties ADD COLUMN currency TEXT DEFAULT 'USD'") } catch(e) {}
 
   // Migrate existing tables with new columns
   try { db.exec("ALTER TABLE vendors ADD COLUMN poc_name TEXT") } catch(e) {}

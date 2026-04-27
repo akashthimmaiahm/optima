@@ -119,6 +119,68 @@ const SKU_PRICES = {
   EMS_E5: 16.00, EMS_E3: 10.90,
 };
 
+// ── AI Application Catalog ───────────────────────────────────────────────────
+const AI_APP_CATALOG = [
+  { name: 'Claude (Anthropic)', vendor: 'Anthropic', category: 'AI Assistant', description: 'Advanced AI assistant for analysis, coding, writing, and reasoning', url: 'https://claude.ai', tiers: [
+    { plan: 'Free', price: 0, features: 'Basic access, limited usage' },
+    { plan: 'Pro', price: 20, features: 'Extended usage, priority access, Claude Opus/Sonnet' },
+    { plan: 'Team', price: 30, features: 'Team workspace, admin controls, higher limits' },
+    { plan: 'Enterprise', price: null, features: 'SSO, SCIM, custom data retention, dedicated support' },
+    { plan: 'API', price: null, features: 'Pay-per-token: Opus $15/$75, Sonnet $3/$15, Haiku $0.25/$1.25 per 1M tokens (input/output)' },
+  ]},
+  { name: 'ChatGPT (OpenAI)', vendor: 'OpenAI', category: 'AI Assistant', description: 'Conversational AI for writing, coding, analysis, and image generation', url: 'https://chat.openai.com', tiers: [
+    { plan: 'Free', price: 0, features: 'GPT-4o mini, limited usage' },
+    { plan: 'Plus', price: 20, features: 'GPT-4o, DALL-E, advanced analysis' },
+    { plan: 'Team', price: 30, features: 'Workspace, admin console, higher limits' },
+    { plan: 'Enterprise', price: null, features: 'SSO, SCIM, unlimited GPT-4, data privacy' },
+    { plan: 'API', price: null, features: 'Pay-per-token: GPT-4o $2.50/$10, GPT-4o-mini $0.15/$0.60 per 1M tokens' },
+  ]},
+  { name: 'GitHub Copilot', vendor: 'GitHub / Microsoft', category: 'AI Code Assistant', description: 'AI-powered code completion and suggestions in IDEs', url: 'https://github.com/features/copilot', tiers: [
+    { plan: 'Individual', price: 10, features: 'Code completion, chat, CLI' },
+    { plan: 'Business', price: 19, features: 'Organization management, policy controls, audit logs' },
+    { plan: 'Enterprise', price: 39, features: 'Fine-tuned models, knowledge bases, SSO' },
+  ]},
+  { name: 'Google Gemini', vendor: 'Google', category: 'AI Assistant', description: 'Multimodal AI for text, code, images, and Google Workspace integration', url: 'https://gemini.google.com', tiers: [
+    { plan: 'Free', price: 0, features: 'Basic Gemini access' },
+    { plan: 'Advanced', price: 20, features: 'Gemini Ultra, 2TB storage, Workspace integration' },
+    { plan: 'Business', price: 20, features: 'Google Workspace AI add-on per user' },
+    { plan: 'API', price: null, features: 'Pay-per-token: Gemini Pro $1.25/$5, Flash $0.075/$0.30 per 1M tokens' },
+  ]},
+  { name: 'Microsoft Copilot', vendor: 'Microsoft', category: 'AI Productivity', description: 'AI assistant embedded in Microsoft 365, Windows, and Edge', url: 'https://copilot.microsoft.com', tiers: [
+    { plan: 'Free', price: 0, features: 'Basic chat, web search, limited features' },
+    { plan: 'Pro', price: 20, features: 'Priority GPT-4 Turbo, Microsoft 365 integration' },
+    { plan: 'M365 Copilot', price: 30, features: 'Full integration with Word, Excel, PowerPoint, Teams, Outlook' },
+  ]},
+  { name: 'Midjourney', vendor: 'Midjourney', category: 'AI Image Generation', description: 'AI-powered image generation from text prompts', url: 'https://midjourney.com', tiers: [
+    { plan: 'Basic', price: 10, features: '~200 images/month, 3 concurrent jobs' },
+    { plan: 'Standard', price: 30, features: '15h fast time, unlimited relax' },
+    { plan: 'Pro', price: 60, features: '30h fast time, stealth mode' },
+    { plan: 'Mega', price: 120, features: '60h fast time, 12 concurrent jobs' },
+  ]},
+  { name: 'Cursor', vendor: 'Anysphere', category: 'AI Code Editor', description: 'AI-first code editor with Claude & GPT integration for coding', url: 'https://cursor.com', tiers: [
+    { plan: 'Hobby', price: 0, features: '2000 completions, 50 slow requests/mo' },
+    { plan: 'Pro', price: 20, features: 'Unlimited completions, 500 fast requests/mo' },
+    { plan: 'Business', price: 40, features: 'Team management, centralized billing, SSO' },
+  ]},
+  { name: 'Notion AI', vendor: 'Notion', category: 'AI Productivity', description: 'AI writing and knowledge assistant built into Notion workspace', url: 'https://notion.so', tiers: [
+    { plan: 'Add-on', price: 10, features: 'AI features per member per month on any Notion plan' },
+  ]},
+  { name: 'Perplexity AI', vendor: 'Perplexity', category: 'AI Search', description: 'AI-powered search engine with cited sources and real-time data', url: 'https://perplexity.ai', tiers: [
+    { plan: 'Free', price: 0, features: 'Basic search, limited Pro queries' },
+    { plan: 'Pro', price: 20, features: 'Unlimited Pro searches, file upload, API access' },
+    { plan: 'Enterprise', price: null, features: 'SSO, data privacy, admin controls' },
+  ]},
+  { name: 'Grammarly', vendor: 'Grammarly', category: 'AI Writing', description: 'AI writing assistant for grammar, tone, and content improvement', url: 'https://grammarly.com', tiers: [
+    { plan: 'Free', price: 0, features: 'Basic grammar and spelling' },
+    { plan: 'Premium', price: 12, features: 'Advanced suggestions, tone, plagiarism' },
+    { plan: 'Business', price: 15, features: 'Team analytics, style guides, SSO' },
+  ]},
+];
+
+router.get('/ai-catalog', authenticate, (req, res) => {
+  res.json({ data: AI_APP_CATALOG, total: AI_APP_CATALOG.length });
+});
+
 // ── SaaS Discovery — from ALL connected integrations ─────────────────────────
 
 router.get('/discovered-apps', authenticate, async (req, res) => {
@@ -126,6 +188,27 @@ router.get('/discovered-apps', authenticate, async (req, res) => {
     const integrations = getAllConnectedIntegrations();
     const data = [];
     let id = 0;
+
+    // Include AI apps from catalog in discovered apps
+    for (const aiApp of AI_APP_CATALOG) {
+      id++;
+      const cheapestPaid = aiApp.tiers.find(t => t.price && t.price > 0);
+      data.push({
+        id,
+        name: aiApp.name,
+        sku: aiApp.vendor,
+        category: aiApp.category,
+        source: 'AI Catalog',
+        url: aiApp.url,
+        detected_users: 0,
+        total_seats: 0,
+        price_per_user: cheapestPaid ? cheapestPaid.price : 0,
+        monthly_cost: 0,
+        total_cost: 0,
+        is_sanctioned: 1,
+        is_ai_app: true,
+      });
+    }
 
     for (const integ of integrations) {
       const sd = getIntegrationSyncDetails(integ);
@@ -758,6 +841,158 @@ router.get('/summary', authenticate, async (req, res) => {
   } catch (err) {
     console.error('summary error:', err.message);
     res.json({ discovered_apps: 0, unsanctioned_apps: 0, reclaim_candidates: 0, potential_savings: 0, shadow_it_high_risk: 0, cloud_resources: 0, cloud_monthly_cost: 0 });
+  }
+});
+
+// ── Cost Analyzer — auto-computed from integration sync data ────────────────
+router.get('/cost-analyzer', authenticate, async (req, res) => {
+  try {
+    const integrations = getAllConnectedIntegrations();
+    const breakdown = [];      // per-service line items
+    const byProvider = {};     // grouped totals
+    let totalMonthly = 0;
+    let totalCommitted = 0;
+    let totalWasted = 0;
+
+    for (const integ of integrations) {
+      const sd = getIntegrationSyncDetails(integ);
+      const providerName = integ.name || integ.provider || 'Unknown';
+
+      if (providerName.includes('Microsoft') || providerName.includes('M365') || providerName.includes('365')) {
+        // Live SKU fetch for most accurate numbers
+        let skus = sd.skus || [];
+        try {
+          const token = await getM365Token(integ);
+          const skuResp = await graphGet('https://graph.microsoft.com/v1.0/subscribedSkus', token);
+          skus = (skuResp.value || []).map(s => ({
+            name: s.skuPartNumber,
+            displayName: s.skuPartNumber.replace(/_/g, ' '),
+            consumed: s.consumedUnits || 0,
+            enabled: s.prepaidUnits ? s.prepaidUnits.enabled : 0,
+            suspended: s.prepaidUnits ? (s.prepaidUnits.suspended || 0) : 0,
+            appliesTo: s.appliesTo || 'User',
+          }));
+        } catch { /* use cached sync_details */ }
+
+        const prov = 'Microsoft 365';
+        if (!byProvider[prov]) byProvider[prov] = { provider: prov, monthly: 0, committed: 0, wasted: 0, items: 0, users: sd.total_users || 0 };
+
+        for (const sku of skus) {
+          const price = SKU_PRICES[sku.name] ?? 0;
+          const monthlyActive = price * (sku.consumed || 0);
+          const monthlyCommitted = price * (sku.enabled || 0);
+          const monthlyWasted = price * Math.max(0, (sku.enabled || 0) - (sku.consumed || 0));
+
+          breakdown.push({
+            provider: prov,
+            service: SKU_NAMES[sku.name] || sku.name.replace(/_/g, ' '),
+            sku: sku.name,
+            type: 'SaaS License',
+            units_active: sku.consumed || 0,
+            units_committed: sku.enabled || 0,
+            units_unused: Math.max(0, (sku.enabled || 0) - (sku.consumed || 0)),
+            price_per_unit: price,
+            monthly_active: Math.round(monthlyActive * 100) / 100,
+            monthly_committed: Math.round(monthlyCommitted * 100) / 100,
+            monthly_wasted: Math.round(monthlyWasted * 100) / 100,
+            billing_cycle: 'monthly',
+            currency: 'USD',
+          });
+
+          byProvider[prov].monthly += monthlyActive;
+          byProvider[prov].committed += monthlyCommitted;
+          byProvider[prov].wasted += monthlyWasted;
+          byProvider[prov].items++;
+          totalMonthly += monthlyActive;
+          totalCommitted += monthlyCommitted;
+          totalWasted += monthlyWasted;
+        }
+      } else if (providerName.includes('AWS') || providerName.includes('Amazon')) {
+        const prov = 'Amazon Web Services';
+        if (!byProvider[prov]) byProvider[prov] = { provider: prov, monthly: 0, committed: 0, wasted: 0, items: 0, users: 0 };
+
+        const ec2Instances = sd.ec2_instances || [];
+        for (const inst of ec2Instances) {
+          const instType = inst.instance_type || inst.type || 'unknown';
+          const cost = EC2_MONTHLY_COST[instType] || 50;
+          const isRunning = inst.state === 'running';
+          const monthlyCost = isRunning ? cost : 0;
+
+          breakdown.push({
+            provider: prov,
+            service: `EC2: ${inst.name || inst.instance_id || 'Instance'}`,
+            sku: instType,
+            type: 'Compute',
+            units_active: isRunning ? 1 : 0,
+            units_committed: 1,
+            units_unused: isRunning ? 0 : 1,
+            price_per_unit: cost,
+            monthly_active: monthlyCost,
+            monthly_committed: cost,
+            monthly_wasted: isRunning ? 0 : cost,
+            billing_cycle: 'on-demand',
+            currency: 'USD',
+            status: inst.state,
+            region: inst.region || inst.placement || '',
+          });
+
+          byProvider[prov].monthly += monthlyCost;
+          byProvider[prov].committed += cost;
+          byProvider[prov].wasted += isRunning ? 0 : cost;
+          byProvider[prov].items++;
+          totalMonthly += monthlyCost;
+          totalCommitted += cost;
+          totalWasted += isRunning ? 0 : cost;
+        }
+
+        const s3Buckets = sd.s3_buckets || [];
+        if (s3Buckets.length > 0) {
+          const s3Total = s3Buckets.length * S3_MONTHLY_ESTIMATE;
+          breakdown.push({
+            provider: prov,
+            service: `S3 Storage (${s3Buckets.length} buckets)`,
+            sku: 's3-standard',
+            type: 'Storage',
+            units_active: s3Buckets.length,
+            units_committed: s3Buckets.length,
+            units_unused: 0,
+            price_per_unit: S3_MONTHLY_ESTIMATE,
+            monthly_active: s3Total,
+            monthly_committed: s3Total,
+            monthly_wasted: 0,
+            billing_cycle: 'usage-based',
+            currency: 'USD',
+          });
+          byProvider[prov].monthly += s3Total;
+          byProvider[prov].committed += s3Total;
+          byProvider[prov].items++;
+          totalMonthly += s3Total;
+          totalCommitted += s3Total;
+        }
+
+        byProvider[prov].users = (sd.iam_users || []).length;
+      }
+    }
+
+    // Round provider totals
+    Object.values(byProvider).forEach(p => {
+      p.monthly = Math.round(p.monthly * 100) / 100;
+      p.committed = Math.round(p.committed * 100) / 100;
+      p.wasted = Math.round(p.wasted * 100) / 100;
+    });
+
+    res.json({
+      total_monthly: Math.round(totalMonthly * 100) / 100,
+      total_committed: Math.round(totalCommitted * 100) / 100,
+      total_wasted: Math.round(totalWasted * 100) / 100,
+      total_annual: Math.round(totalMonthly * 12 * 100) / 100,
+      optimization_pct: totalCommitted > 0 ? Math.round((1 - totalWasted / totalCommitted) * 100) : 100,
+      by_provider: Object.values(byProvider),
+      breakdown: breakdown.sort((a, b) => b.monthly_active - a.monthly_active),
+    });
+  } catch (err) {
+    console.error('cost-analyzer error:', err.message);
+    res.json({ total_monthly: 0, total_committed: 0, total_wasted: 0, total_annual: 0, optimization_pct: 100, by_provider: [], breakdown: [] });
   }
 });
 

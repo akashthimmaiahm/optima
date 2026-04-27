@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Cpu, Bot, User, Link2, ArrowRightLeft, Clock, CheckCircle, XCircle, ExternalLink, Eye, Package } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { Plus, Search, Edit, Trash2, RefreshCw, Monitor, ShieldCheck, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Cpu, Bot, User, Link2, ArrowRightLeft, Clock, CheckCircle, XCircle, ExternalLink, Eye, Package, GitBranch } from 'lucide-react'
 import api from '../../api/axios'
 import Badge from '../../components/common/Badge'
 import Modal from '../../components/common/Modal'
@@ -24,6 +24,107 @@ function warrantyState(a) {
   return 'in'
 }
 
+// ── Relationship Graph (SVG connection map) ─────────────────────────────────
+const TYPE_COLORS = { hardware: '#3b82f6', software: '#8b5cf6', contract: '#f59e0b', license: '#10b981' }
+const TYPE_BG = { hardware: '#eff6ff', software: '#f5f3ff', contract: '#fffbeb', license: '#ecfdf5' }
+const TYPE_DARK_BG = { hardware: '#1e3a5f', software: '#2e1065', contract: '#451a03', license: '#064e3b' }
+
+function RelationshipGraph({ asset, relationships }) {
+  const svgRef = useRef(null)
+  if (!relationships || relationships.length === 0) {
+    return <p className="text-xs text-gray-400 text-center py-8">No relationships to visualize. Add relationships in the Relationships tab.</p>
+  }
+
+  // Build nodes: center = this asset, around = linked assets
+  const centerNode = { id: `hardware-${asset.id}`, name: asset.name, type: 'hardware', x: 0, y: 0 }
+  const linkedMap = new Map()
+  relationships.forEach(r => {
+    const isSource = r.source_type === 'hardware' && r.source_id === asset.id
+    const linkedType = isSource ? r.target_type : r.source_type
+    const linkedId = isSource ? r.target_id : r.source_id
+    const linkedName = isSource ? r.target_name : r.source_name
+    const key = `${linkedType}-${linkedId}`
+    if (!linkedMap.has(key)) {
+      linkedMap.set(key, { id: key, name: linkedName || `${linkedType} #${linkedId}`, type: linkedType, rels: [] })
+    }
+    linkedMap.get(key).rels.push(r.relationship)
+  })
+
+  const linked = Array.from(linkedMap.values())
+  const count = linked.length
+  const svgW = 700, svgH = Math.max(380, count > 6 ? 480 : 380)
+  const cx = svgW / 2, cy = svgH / 2
+  const radius = Math.min(svgW, svgH) * 0.35
+
+  // Position linked nodes in a circle around center
+  linked.forEach((node, i) => {
+    const angle = (2 * Math.PI * i / count) - Math.PI / 2
+    node.x = cx + radius * Math.cos(angle)
+    node.y = cy + radius * Math.sin(angle)
+  })
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg ref={svgRef} viewBox={`0 0 ${svgW} ${svgH}`} className="w-full max-w-[700px]" style={{ minHeight: '340px' }}>
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#6b7280" /></marker>
+        </defs>
+        {/* Connection lines */}
+        {linked.map(node => {
+          const color = TYPE_COLORS[node.type] || '#6b7280'
+          return (
+            <g key={node.id}>
+              <line x1={cx} y1={cy} x2={node.x} y2={node.y} stroke={color} strokeWidth="2" strokeOpacity="0.5" markerEnd="url(#arrowhead)" />
+              {/* Label on line */}
+              {node.rels.map((rel, ri) => {
+                const mx = (cx + node.x) / 2
+                const my = (cy + node.y) / 2 + ri * 12
+                return (
+                  <text key={ri} x={mx} y={my} textAnchor="middle" className="fill-gray-500 dark:fill-gray-400" style={{ fontSize: '9px', fontWeight: 500 }}>
+                    {RELATIONSHIP_LABELS[rel] || rel}
+                  </text>
+                )
+              })}
+            </g>
+          )
+        })}
+        {/* Center node */}
+        <g>
+          <rect x={cx - 60} y={cy - 22} width={120} height={44} rx={10} fill={TYPE_COLORS.hardware} fillOpacity="0.15" stroke={TYPE_COLORS.hardware} strokeWidth="2" />
+          <text x={cx} y={cy - 4} textAnchor="middle" className="fill-blue-600 dark:fill-blue-400" style={{ fontSize: '11px', fontWeight: 700 }}>
+            {asset.name?.length > 16 ? asset.name.slice(0, 16) + '...' : asset.name}
+          </text>
+          <text x={cx} y={cy + 10} textAnchor="middle" className="fill-gray-400" style={{ fontSize: '9px' }}>This Asset</text>
+        </g>
+        {/* Linked nodes */}
+        {linked.map(node => {
+          const color = TYPE_COLORS[node.type] || '#6b7280'
+          const displayName = node.name?.length > 20 ? node.name.slice(0, 20) + '...' : node.name
+          return (
+            <g key={node.id}>
+              <rect x={node.x - 55} y={node.y - 20} width={110} height={40} rx={8} fill={color} fillOpacity="0.1" stroke={color} strokeWidth="1.5" />
+              <text x={node.x} y={node.y - 4} textAnchor="middle" style={{ fontSize: '10px', fontWeight: 600, fill: color }}>
+                {displayName}
+              </text>
+              <text x={node.x} y={node.y + 10} textAnchor="middle" className="fill-gray-400" style={{ fontSize: '8px', textTransform: 'capitalize' }}>
+                {node.type}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      <div className="flex gap-4 mt-2">
+        {Object.entries(TYPE_COLORS).map(([type, color]) => (
+          <div key={type} className="flex items-center gap-1.5 text-[10px] text-gray-500">
+            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: color, opacity: 0.6 }}></span>
+            <span className="capitalize">{type}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Asset Detail Modal ───────────────────────────────────────────────────────
 function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
   const [detail, setDetail] = useState(null)
@@ -34,8 +135,7 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
   const [loanMsg, setLoanMsg] = useState(null)
   // Relationship form
   const [relForm, setRelForm] = useState({ target_type: 'software', target_id: '', relationship: 'installed_on', description: '' })
-  const [relSearch, setRelSearch] = useState('')
-  const [relResults, setRelResults] = useState([])
+  const [relTargetList, setRelTargetList] = useState([])
   const [relMsg, setRelMsg] = useState(null)
 
   useEffect(() => {
@@ -45,16 +145,25 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
     api.get(`/hardware/${asset.id}`).then(r => setDetail(r.data)).finally(() => setLoading(false))
   }, [asset, isOpen])
 
-  const searchAssets = useCallback(async (q, type) => {
-    if (!q || q.length < 2) { setRelResults([]); return }
-    const r = await api.get('/asset-management/search', { params: { q, type } })
-    setRelResults(r.data.data || [])
-  }, [])
-
+  // Fetch all items of the selected target type for the dropdown
   useEffect(() => {
-    const t = setTimeout(() => searchAssets(relSearch, relForm.target_type), 300)
-    return () => clearTimeout(t)
-  }, [relSearch, relForm.target_type, searchAssets])
+    if (!isOpen) return
+    const type = relForm.target_type
+    let endpoint = ''
+    if (type === 'hardware') endpoint = '/hardware'
+    else if (type === 'software') endpoint = '/software'
+    else if (type === 'contract') endpoint = '/contracts'
+    else if (type === 'license') endpoint = '/licenses'
+    if (!endpoint) return
+    api.get(endpoint).then(r => {
+      const items = r.data.data || r.data || []
+      setRelTargetList(items.map(i => ({
+        id: i.id,
+        name: i.name || i.title || `#${i.id}`,
+        sub: type === 'hardware' ? (i.asset_tag || i.type) : type === 'software' ? (i.vendor || i.category) : type === 'contract' ? i.type : (i.license_type || ''),
+      })))
+    }).catch(() => setRelTargetList([]))
+  }, [relForm.target_type, isOpen])
 
   const handleCheckout = async (e) => {
     e.preventDefault()
@@ -87,7 +196,6 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
       await api.post('/asset-management/relationships', { source_type: 'hardware', source_id: asset.id, ...relForm })
       setRelMsg({ ok: true, text: 'Relationship created' })
       setRelForm(f => ({ ...f, target_id: '', description: '' }))
-      setRelSearch('')
       const r = await api.get(`/hardware/${asset.id}`)
       setDetail(r.data)
     } catch (err) { setRelMsg({ ok: false, text: err.response?.data?.error || 'Failed' }) }
@@ -108,6 +216,7 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
     { id: 'overview', label: 'Overview', icon: Eye },
     { id: 'loans', label: 'Loan Registry', icon: ArrowRightLeft },
     { id: 'relationships', label: 'Relationships', icon: Link2 },
+    { id: 'graph', label: 'Connection Map', icon: GitBranch },
     { id: 'type_fields', label: 'Type Fields', icon: Package },
   ]
 
@@ -257,22 +366,18 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
                     </div>
                     <div>
                       <label className="label">Target Type</label>
-                      <select className="input" value={relForm.target_type} onChange={e => { setRelForm(f => ({ ...f, target_type: e.target.value, target_id: '' })); setRelSearch(''); setRelResults([]) }}>
+                      <select className="input" value={relForm.target_type} onChange={e => { setRelForm(f => ({ ...f, target_type: e.target.value, target_id: '' })) }}>
                         {['hardware', 'software', 'contract', 'license'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                       </select>
                     </div>
-                    <div className="relative">
-                      <label className="label">Search Target *</label>
-                      <input className="input" placeholder="Type to search..." value={relSearch} onChange={e => { setRelSearch(e.target.value); setRelForm(f => ({ ...f, target_id: '' })) }} />
-                      {relResults.length > 0 && !relForm.target_id && (
-                        <div className="absolute z-10 top-full mt-1 w-full bg-white dark:bg-[#1a1a1f] border border-gray-200 dark:border-[#2a2a35] rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                          {relResults.map(r => (
-                            <button key={`${r.asset_type}-${r.id}`} type="button" onClick={() => { setRelForm(f => ({ ...f, target_id: r.id })); setRelSearch(r.name); setRelResults([]) }} className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#22222e]">
-                              <span className="font-medium">{r.name}</span> <span className="text-gray-400">({r.subtype})</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <div>
+                      <label className="label">Select Target *</label>
+                      <select className="input" value={relForm.target_id} onChange={e => setRelForm(f => ({ ...f, target_id: e.target.value }))}>
+                        <option value="">— Select {relForm.target_type} —</option>
+                        {relTargetList.map(item => (
+                          <option key={item.id} value={item.id}>{item.name}{item.sub ? ` (${item.sub})` : ''}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="label">Description</label>
@@ -308,6 +413,11 @@ function AssetDetailModal({ asset, isOpen, onClose, canEdit, onRefresh }) {
                 </div>
               ) : <p className="text-xs text-gray-400">No relationships defined for this asset.</p>}
             </div>
+          )}
+
+          {/* Connection Map Tab */}
+          {tab === 'graph' && d && (
+            <RelationshipGraph asset={d} relationships={d.relationships || []} />
           )}
 
           {/* Type Fields Tab */}

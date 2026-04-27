@@ -17,6 +17,14 @@ frontend/dist/
 electron/dist-electron/
 electron/node_modules/
 
+# ── Agent build output / certs ────────────────────────────────────────────────
+deploy/agent/dist/
+*.pfx
+
+# ── SSO seed scripts (contain secrets) ───────────────────────────────────────
+central-server-auth-sso.js
+central-server/seed_sso.js
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/

@@ -281,6 +281,15 @@ router.put('/:id/configure', authenticate, authorize('super_admin', 'it_admin', 
   res.json({ message: 'Integration configuration updated' });
 });
 
+// Update payment/billing info for an integration
+router.put('/:id/payment', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
+  const db = getDb();
+  const { payment_card, payment_method, billing_cycle, next_payment_date, billing_email, monthly_budget } = req.body;
+  db.prepare(`UPDATE cloud_integrations SET payment_card=?, payment_method=?, billing_cycle=?, next_payment_date=?, billing_email=?, monthly_budget=?, updated_at=datetime('now') WHERE id=?`)
+    .run(payment_card, payment_method || 'credit_card', billing_cycle || 'monthly', next_payment_date, billing_email, monthly_budget, req.params.id);
+  res.json({ message: 'Payment info updated' });
+});
+
 router.put('/:id/disconnect', authenticate, authorize('super_admin', 'it_admin', 'it_manager'), (req, res) => {
   const db = getDb();
   db.prepare(`UPDATE cloud_integrations SET status='disconnected', last_sync=NULL, licenses_discovered=0, users_synced=0, updated_at=datetime('now') WHERE id=?`).run(req.params.id);

@@ -7,11 +7,31 @@ import { useAuth } from '../../contexts/AuthContext'
 
 const EMPTY_FORM = {
   name: '', slug: '', domain: '', plan: 'standard', admin_email: '',
-  max_assets: 10000, timezone: 'UTC', notes: ''
+  max_assets: 10000, timezone: 'UTC', currency: 'USD', notes: ''
 }
 
 const PLANS = ['standard', 'professional', 'enterprise']
 const TIMEZONES = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Singapore', 'Australia/Sydney']
+const CURRENCIES = [
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
+  { code: 'SAR', symbol: '﷼', name: 'Saudi Riyal' },
+  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
+  { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
+  { code: 'NPR', symbol: 'रू', name: 'Nepalese Rupee' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit' },
+  { code: 'THB', symbol: '฿', name: 'Thai Baht' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+]
 
 const planColor = { enterprise: 'purple', professional: 'info', standard: 'default' }
 const statusColor = { active: 'success', inactive: 'warning', archived: 'danger' }
@@ -53,7 +73,7 @@ export default function Properties() {
   const openAdd = () => { setEditItem(null); setForm(EMPTY_FORM); setModalOpen(true) }
   const openEdit = (p) => {
     setEditItem(p)
-    setForm({ name: p.name, slug: p.slug, domain: p.domain || '', plan: p.plan || 'standard', admin_email: p.admin_email || '', max_assets: p.max_assets || 10000, timezone: p.timezone || 'UTC', notes: p.notes || '' })
+    setForm({ name: p.name, slug: p.slug, domain: p.domain || '', plan: p.plan || 'standard', admin_email: p.admin_email || '', max_assets: p.max_assets || 10000, timezone: p.timezone || 'UTC', currency: p.currency || 'USD', notes: p.notes || '' })
     setModalOpen(true)
   }
 
@@ -154,6 +174,7 @@ export default function Properties() {
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <Badge variant={statusColor[p.status] || 'default'}>{p.status}</Badge>
                 <Badge variant={planColor[p.plan] || 'default'}>{p.plan}</Badge>
+                {p.currency && <Badge variant="info">{p.currency}</Badge>}
               </div>
 
               {p.domain && (
@@ -234,6 +255,12 @@ export default function Properties() {
               <label className="label">Timezone</label>
               <select className="input" value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}>
                 {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Currency</label>
+              <select className="input" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>)}
               </select>
             </div>
           </div>

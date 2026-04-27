@@ -111,8 +111,8 @@ router.get('/stats', authenticate, (req, res) => {
     cloudProviders = [...new Set(cloudProviders)];
   } catch (e) {}
 
-  // Wasted license spend — underutilized (< 50% used) with cost
-  const wastedLicenses = db.prepare(`
+  // Wasted license spend — underutilized (< 70% used) with cost
+  const wastedLicensesLocal = db.prepare(`
     SELECT name, vendor, total_licenses, used_licenses, cost_per_license,
       (total_licenses - used_licenses) * cost_per_license as wasted_cost,
       ROUND(used_licenses * 100.0 / total_licenses, 1) as utilization_pct
@@ -122,6 +122,46 @@ router.get('/stats', authenticate, (req, res) => {
     ORDER BY wasted_cost DESC
     LIMIT 6
   `).all();
+
+  // Also include wasted licenses from connected integrations (M365 SKUs)
+  const wastedIntegrated = [];
+  try {
+    const integrations3 = db.prepare("SELECT * FROM cloud_integrations WHERE status='connected'").all();
+    for (const integ of integrations3) {
+      let config3 = {};
+      try { config3 = typeof integ.config === 'string' ? JSON.parse(integ.config) : (integ.config || {}); } catch {}
+      const sd3 = config3.sync_details || {};
+      const pn3 = integ.name || integ.provider || '';
+      if (pn3.includes('Microsoft') || pn3.includes('M365') || pn3.includes('365')) {
+        const skus = sd3.skus || [];
+        for (const sku of skus) {
+          const price = SKU_PRICES[sku.name] || 0;
+          if (price > 0 && (sku.enabled || 0) > 0) {
+            const consumed = sku.consumed || 0;
+            const enabled = sku.enabled || 0;
+            const unused = Math.max(0, enabled - consumed);
+            const utilPct = Math.round((consumed / enabled) * 1000) / 10;
+            if (utilPct < 70 && unused > 0) {
+              wastedIntegrated.push({
+                name: SKU_NAMES[sku.name] || sku.name.replace(/_/g, ' '),
+                vendor: 'Microsoft',
+                total_licenses: enabled,
+                used_licenses: consumed,
+                cost_per_license: price,
+                wasted_cost: Math.round(unused * price * 100) / 100,
+                utilization_pct: utilPct,
+                source: 'integration',
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
+  const wastedLicenses = [...wastedLicensesLocal, ...wastedIntegrated]
+    .sort((a, b) => (b.wasted_cost || 0) - (a.wasted_cost || 0))
+    .slice(0, 10);
 
   const totalWastedCost = wastedLicenses.reduce((s, r) => s + (r.wasted_cost || 0), 0);
 
@@ -262,7 +302,15 @@ router.get('/stats', authenticate, (req, res) => {
     100 - (totalWastedCost / Math.max(softwareSpend, 1)) * 100
   )));
 
+  // Get property currency
+  let currency = 'USD';
+  try {
+    const prop = db.prepare("SELECT currency FROM properties WHERE status='active' ORDER BY id LIMIT 1").get();
+    if (prop?.currency) currency = prop.currency;
+  } catch {}
+
   res.json({
+    currency,
     // Existing
     totalSoftware, totalHardware,
     totalLicenses: totalLicenses.total || 0,
@@ -303,6 +351,178 @@ router.get('/stats', authenticate, (req, res) => {
       iamUsersWithoutMFA,
       monthlyCost: shadowCost,
     },
+  });
+});
+
+// ── Cost Analyzer — per-asset total cost (HW + SW + Cloud) + compliance ────
+router.get('/cost-analyzer', authenticate, (req, res) => {
+  const db = getDb();
+
+  // Hardware assets with their linked software costs
+  const hardware = db.prepare(`
+    SELECT id, name, asset_tag, type, manufacturer, model, status, condition,
+           purchase_cost, warranty_expiry, assigned_to, department, is_eol
+    FROM hardware_assets WHERE status != 'disposed'
+    ORDER BY purchase_cost DESC
+  `).all();
+
+  // Get relationships to find linked software/licenses/contracts
+  const allRels = db.prepare('SELECT * FROM asset_relationships').all();
+
+  // Software + license costs
+  const allSoftware = db.prepare(`
+    SELECT id, name, vendor, category, cost_per_license, total_licenses, used_licenses,
+           expiry_date, license_type
+    FROM software_assets
+  `).all();
+  const softwareMap = Object.fromEntries(allSoftware.map(s => [s.id, s]));
+
+  // Contracts
+  const allContracts = db.prepare(`SELECT id, title, value, start_date, end_date, status FROM contracts`).all();
+  const contractMap = Object.fromEntries(allContracts.map(c => [c.id, c]));
+
+  // Licenses
+  let allLicenses = [];
+  try {
+    allLicenses = db.prepare(`
+      SELECT l.id, l.software_id, l.license_type, l.license_key, l.seats, l.cost,
+             s.name as software_name, s.vendor
+      FROM licenses l LEFT JOIN software_assets s ON l.software_id = s.id
+    `).all();
+  } catch (e) {}
+  const licenseMap = Object.fromEntries(allLicenses.map(l => [l.id, l]));
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Build per-asset cost breakdown
+  const assetCosts = hardware.map(hw => {
+    const hwRels = allRels.filter(r =>
+      (r.source_type === 'hardware' && r.source_id === hw.id) ||
+      (r.target_type === 'hardware' && r.target_id === hw.id)
+    );
+
+    let softwareCost = 0;
+    let licenseCost = 0;
+    let contractCost = 0;
+    const linkedSoftware = [];
+    const linkedContracts = [];
+    const linkedLicenses = [];
+
+    for (const rel of hwRels) {
+      const linkedType = rel.source_type === 'hardware' && rel.source_id === hw.id ? rel.target_type : rel.source_type;
+      const linkedId = rel.source_type === 'hardware' && rel.source_id === hw.id ? rel.target_id : rel.source_id;
+
+      if (linkedType === 'software' && softwareMap[linkedId]) {
+        const sw = softwareMap[linkedId];
+        const monthlyCost = (sw.cost_per_license || 0);
+        softwareCost += monthlyCost;
+        linkedSoftware.push({ id: sw.id, name: sw.name, vendor: sw.vendor, monthly_cost: monthlyCost });
+      }
+      if (linkedType === 'contract' && contractMap[linkedId]) {
+        const ct = contractMap[linkedId];
+        const months = ct.start_date && ct.end_date
+          ? Math.max(1, Math.round((new Date(ct.end_date) - new Date(ct.start_date)) / (30 * 86400000)))
+          : 12;
+        const monthlyCost = (ct.value || 0) / months;
+        contractCost += monthlyCost;
+        linkedContracts.push({ id: ct.id, title: ct.title, monthly_cost: monthlyCost });
+      }
+      if (linkedType === 'license' && licenseMap[linkedId]) {
+        const lic = licenseMap[linkedId];
+        const monthlyCost = (lic.cost || 0);
+        licenseCost += monthlyCost;
+        linkedLicenses.push({ id: lic.id, name: lic.software_name || `License #${lic.id}`, monthly_cost: monthlyCost });
+      }
+    }
+
+    const hwMonthlyCost = (hw.purchase_cost || 0) / 36; // Amortize over 3 years
+    const totalMonthlyCost = hwMonthlyCost + softwareCost + licenseCost + contractCost;
+
+    // Compliance checks
+    const compliance = [];
+    if (hw.is_eol) compliance.push({ type: 'danger', label: 'End of Life' });
+    if (hw.warranty_expiry && hw.warranty_expiry < today) compliance.push({ type: 'warning', label: 'Warranty Expired' });
+    else if (hw.warranty_expiry) {
+      const in90 = new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0];
+      if (hw.warranty_expiry < in90) compliance.push({ type: 'warning', label: 'Warranty Expiring' });
+      else compliance.push({ type: 'success', label: 'In Warranty' });
+    } else {
+      compliance.push({ type: 'info', label: 'No Warranty' });
+    }
+    if (!hw.assigned_to) compliance.push({ type: 'info', label: 'Unassigned' });
+    if (hw.condition === 'poor') compliance.push({ type: 'danger', label: 'Poor Condition' });
+
+    const complianceScore = 100
+      - (hw.is_eol ? 30 : 0)
+      - (hw.warranty_expiry && hw.warranty_expiry < today ? 20 : 0)
+      - (hw.condition === 'poor' ? 20 : 0)
+      - (!hw.assigned_to && hw.status === 'active' ? 10 : 0);
+
+    return {
+      ...hw,
+      hw_monthly_cost: Math.round(hwMonthlyCost * 100) / 100,
+      software_cost: Math.round(softwareCost * 100) / 100,
+      license_cost: Math.round(licenseCost * 100) / 100,
+      contract_cost: Math.round(contractCost * 100) / 100,
+      total_monthly_cost: Math.round(totalMonthlyCost * 100) / 100,
+      linked_software: linkedSoftware,
+      linked_contracts: linkedContracts,
+      linked_licenses: linkedLicenses,
+      compliance,
+      compliance_score: Math.max(0, complianceScore),
+    };
+  });
+
+  // Aggregates
+  const totalHwValue = assetCosts.reduce((s, a) => s + (a.purchase_cost || 0), 0);
+  const totalMonthlyCost = assetCosts.reduce((s, a) => s + a.total_monthly_cost, 0);
+  const avgComplianceScore = assetCosts.length > 0
+    ? Math.round(assetCosts.reduce((s, a) => s + a.compliance_score, 0) / assetCosts.length) : 100;
+  const eolCount = assetCosts.filter(a => a.is_eol).length;
+  const expiredWarranty = assetCosts.filter(a => a.compliance.some(c => c.label === 'Warranty Expired')).length;
+  const poorCondition = assetCosts.filter(a => a.condition === 'poor').length;
+
+  // Top 10 costliest assets
+  const topCostly = [...assetCosts].sort((a, b) => b.total_monthly_cost - a.total_monthly_cost).slice(0, 10);
+
+  // Cost by department
+  const deptMap = {};
+  for (const a of assetCosts) {
+    const dept = a.department || 'Unassigned';
+    if (!deptMap[dept]) deptMap[dept] = { department: dept, hw_cost: 0, sw_cost: 0, total: 0, count: 0 };
+    deptMap[dept].hw_cost += a.hw_monthly_cost;
+    deptMap[dept].sw_cost += a.software_cost + a.license_cost;
+    deptMap[dept].total += a.total_monthly_cost;
+    deptMap[dept].count++;
+  }
+  const costByDepartment = Object.values(deptMap).sort((a, b) => b.total - a.total);
+
+  // Cost by type
+  const typeMap = {};
+  for (const a of assetCosts) {
+    if (!typeMap[a.type]) typeMap[a.type] = { type: a.type, total: 0, count: 0, hw_cost: 0, sw_cost: 0 };
+    typeMap[a.type].hw_cost += a.hw_monthly_cost;
+    typeMap[a.type].sw_cost += a.software_cost + a.license_cost;
+    typeMap[a.type].total += a.total_monthly_cost;
+    typeMap[a.type].count++;
+  }
+  const costByType = Object.values(typeMap).sort((a, b) => b.total - a.total);
+
+  res.json({
+    assets: assetCosts,
+    summary: {
+      total_assets: assetCosts.length,
+      total_hw_value: totalHwValue,
+      total_monthly_cost: Math.round(totalMonthlyCost * 100) / 100,
+      total_annual_cost: Math.round(totalMonthlyCost * 12 * 100) / 100,
+      avg_compliance_score: avgComplianceScore,
+      eol_count: eolCount,
+      expired_warranty: expiredWarranty,
+      poor_condition: poorCondition,
+    },
+    top_costly: topCostly,
+    cost_by_department: costByDepartment,
+    cost_by_type: costByType,
   });
 });
 

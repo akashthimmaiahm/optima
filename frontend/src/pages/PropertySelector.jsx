@@ -36,33 +36,33 @@ function AgentDownloadModal({ prop, onClose }) {
   const agents = [
     {
       id: 'windows',
-      label: 'Windows Agent',
+      label: 'Windows',
       icon: Monitor,
       color: 'text-blue-500',
-      ext: '.bat',
-      file: `optima-agent-install.bat`,
-      downloadUrl: `/api/agents/windows/install?key=${encodeURIComponent(key)}`,
-      install: `# Right-click > Run as Administrator:\noptima-agent-install.bat`,
+      ext: '.exe',
+      file: `optima-agent-setup.exe`,
+      downloadUrl: `/api/agents/windows/download?key=${encodeURIComponent(key)}`,
+      install: `Run optima-agent-setup.exe as Administrator.\nProperty key is pre-configured — just click Install.`,
     },
     {
       id: 'linux',
-      label: 'Linux Agent',
+      label: 'Linux / Ubuntu',
       icon: Terminal,
       color: 'text-green-500',
-      ext: '.sh',
-      file: `optima-agent-install-linux.sh`,
-      downloadUrl: `/api/agents/linux/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nchmod +x optima-agent-install-linux.sh\nsudo ./optima-agent-install-linux.sh`,
+      ext: '.run',
+      file: `optima-agent-installer.run`,
+      downloadUrl: `/api/agents/linux/download?key=${encodeURIComponent(key)}`,
+      install: `sudo bash optima-agent-installer.run`,
     },
     {
       id: 'mac',
-      label: 'macOS Agent',
+      label: 'macOS',
       icon: Apple,
       color: 'text-gray-500 dark:text-gray-300',
-      ext: '.sh',
-      file: `optima-agent-install-macos.sh`,
-      downloadUrl: `/api/agents/mac/install?key=${encodeURIComponent(key)}`,
-      install: `# Run as root:\nchmod +x optima-agent-install-macos.sh\nsudo ./optima-agent-install-macos.sh`,
+      ext: '.command',
+      file: `optima-agent-installer.command`,
+      downloadUrl: `/api/agents/mac/download?key=${encodeURIComponent(key)}`,
+      install: `sudo bash optima-agent-installer.command`,
     },
   ]
 
@@ -115,8 +115,7 @@ function AgentDownloadModal({ prop, onClose }) {
           ))}
 
           <p className="text-[10px] text-gray-400 dark:text-gray-700">
-            The agent discovers installed software, hardware specs, and reports them to this property's backend automatically.
-            The property key is pre-configured — just download and run.
+            Standalone executable — no dependencies required. Downloads, installs as a system service, and runs inventory scans automatically.
           </p>
         </div>
       </div>
@@ -223,11 +222,16 @@ function UsersView() {
   const [tab, setTab]             = useState('list')
   const [search, setSearch]       = useState('')
   const [showAdd, setShowAdd]     = useState(false)
-  const [addForm, setAddForm]     = useState({ name: '', email: '', password: '', global_role: 'user', property_ids: [] })
+  const [addForm, setAddForm]     = useState({ name: '', email: '', password: '', global_role: 'user', property_ids: [], sso_only: false })
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError]   = useState('')
   const [showPwd, setShowPwd]     = useState(false)
   const [grantLoading, setGrantLoading] = useState('')
+  const [editUser, setEditUser]   = useState(null)
+  const [editForm, setEditForm]   = useState({ name: '', email: '', global_role: 'user', is_active: 1 })
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -271,14 +275,56 @@ function UsersView() {
     setAddLoading(true)
     setAddError('')
     try {
-      await api.post('/portal/users', addForm)
-      setAddForm({ name: '', email: '', password: '', global_role: 'user', property_ids: [] })
+      const { sso_only, ...payload } = addForm
+      if (sso_only) {
+        // SSO user — backend handles missing name/password
+        delete payload.name
+        delete payload.password
+      }
+      await api.post('/portal/users', payload)
+      setAddForm({ name: '', email: '', password: '', global_role: 'user', property_ids: [], sso_only: false })
       setShowAdd(false)
       await load()
     } catch (err) {
       setAddError(err.response?.data?.error || 'Failed to create user')
     }
     setAddLoading(false)
+  }
+
+  const openEdit = (u) => {
+    setEditUser(u)
+    setEditForm({ name: u.name, email: u.email, global_role: u.global_role, is_active: u.is_active })
+    setEditError('')
+  }
+
+  const submitEdit = async (e) => {
+    e.preventDefault()
+    setEditLoading(true)
+    setEditError('')
+    try {
+      await api.put(`/portal/users/${editUser.id}`, editForm)
+      setEditUser(null)
+      await load()
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Failed to update user')
+    }
+    setEditLoading(false)
+  }
+
+  const confirmDeactivate = async (userId) => {
+    try {
+      await api.delete(`/portal/users/${userId}`)
+      setDeleteConfirm(null)
+      await load()
+    } catch { /* ignore */ }
+  }
+
+  const confirmDeletePermanent = async (userId) => {
+    try {
+      await api.delete(`/portal/users/${userId}/permanent`)
+      setDeleteConfirm(null)
+      await load()
+    } catch { /* ignore */ }
   }
 
   return (
@@ -336,39 +382,59 @@ function UsersView() {
             {/* Add user form */}
             {showAdd && (
               <form onSubmit={submitAdd} className="mb-4 p-4 bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-xl space-y-3">
-                <p className="text-xs font-semibold text-gray-900 dark:text-white mb-2">Create New User</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-900 dark:text-white">Create New User</p>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <span className="text-[10px] text-gray-500">SSO Only</span>
+                    <button type="button" onClick={() => setAddForm(f => ({ ...f, sso_only: !f.sso_only }))}
+                      className={`relative w-8 h-4 rounded-full transition-colors ${addForm.sso_only ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${addForm.sso_only ? 'translate-x-4.5 left-[18px]' : 'left-0.5'}`} />
+                    </button>
+                  </label>
+                </div>
+                {addForm.sso_only && (
+                  <p className="text-[10px] text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-lg px-3 py-1.5">
+                    SSO user — only email and role required. User will login via Microsoft or Sclera SSO.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-1">Name</label>
-                    <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
-                      required placeholder="Full Name"
-                      className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-1">Email</label>
-                    <input type="email" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
-                      required placeholder="user@example.com"
-                      className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-1">Password</label>
-                    <div className="relative">
-                      <input type={showPwd ? 'text' : 'password'} value={addForm.password}
-                        onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
-                        required placeholder="Password"
-                        className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 pr-8 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
-                      <button type="button" onClick={() => setShowPwd(v => !v)}
-                        className="absolute right-2 top-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
-                        {showPwd ? <EyeOff size={12} /> : <Eye size={12} />}
-                      </button>
+                  {!addForm.sso_only && (
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-1">Name</label>
+                      <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                        required={!addForm.sso_only} placeholder="Full Name"
+                        className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
                     </div>
+                  )}
+                  <div className={addForm.sso_only ? 'col-span-2' : ''}>
+                    <label className="text-[10px] text-gray-500 block mb-1">Email {addForm.sso_only && <span className="text-blue-500">(must match SSO provider email)</span>}</label>
+                    <input type="email" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                      required placeholder={addForm.sso_only ? "user@company.com (Microsoft/Sclera email)" : "user@example.com"}
+                      className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
                   </div>
+                  {!addForm.sso_only && (
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-1">Password</label>
+                      <div className="relative">
+                        <input type={showPwd ? 'text' : 'password'} value={addForm.password}
+                          onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
+                          required placeholder="Password"
+                          className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 pr-8 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 outline-none focus:border-blue-500" />
+                        <button type="button" onClick={() => setShowPwd(v => !v)}
+                          className="absolute right-2 top-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                          {showPwd ? <EyeOff size={12} /> : <Eye size={12} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[10px] text-gray-500 block mb-1">Role</label>
                     <select value={addForm.global_role} onChange={e => setAddForm(f => ({ ...f, global_role: e.target.value }))}
                       className="w-full bg-white dark:bg-[#111] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white outline-none focus:border-blue-500">
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
+                      <option value="it_admin">IT Admin</option>
+                      <option value="it_manager">IT Manager</option>
                       <option value="super_admin">Super Admin</option>
                     </select>
                   </div>
@@ -428,21 +494,160 @@ function UsersView() {
                     : u.global_role === 'admin' ? 'text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20'
                     : 'text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30'
                   }`}>{u.global_role}</span>
-                  <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className={`flex items-center gap-1 text-[10px] ${u.is_active ? 'text-green-500' : 'text-red-500'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
+                    {u.is_active ? 'Active' : 'Inactive'}
+                  </span>
                   {u.properties?.length > 0 && (
                     <div className="flex gap-1">
                       {u.properties.slice(0, 3).map(p => (
-                        <span key={p.id} className="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-[#1a1a1a] text-gray-500 rounded border border-gray-200 dark:border-[#2a2a2a]">{p.name}</span>
+                        <span key={p.id} className="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-[#1a1a1a] text-gray-500 rounded border border-gray-200 dark:border-[#2a2a2a]">{p.name} <span className="text-gray-400">({p.role})</span></span>
                       ))}
                       {u.properties.length > 3 && <span className="text-[9px] text-gray-400 dark:text-gray-600">+{u.properties.length - 3}</span>}
                     </div>
                   )}
+                  <div className="flex items-center gap-1 ml-2">
+                    <button onClick={() => openEdit(u)} title="Edit user"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                      <Pencil size={12} />
+                    </button>
+                    <button onClick={() => setDeleteConfirm(u)} title="Deactivate user"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 </div>
               ))}
               {filtered.length === 0 && (
                 <p className="text-center text-sm text-gray-400 dark:text-gray-600 py-12">No users found.</p>
               )}
             </div>
+
+            {/* Edit User Modal */}
+            {editUser && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditUser(null)}>
+                <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#2a2a2a] rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4">Edit User</h3>
+                  <form onSubmit={submitEdit} className="space-y-3">
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-1">Name</label>
+                      <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                        required className="w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-1">Email</label>
+                      <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                        required className="w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white outline-none focus:border-blue-500" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] text-gray-500 block mb-1">Global Role</label>
+                        <select value={editForm.global_role} onChange={e => setEditForm(f => ({ ...f, global_role: e.target.value }))}
+                          className="w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white outline-none focus:border-blue-500">
+                          <option value="user">User</option>
+                          <option value="admin">Admin</option>
+                          <option value="it_admin">IT Admin</option>
+                          <option value="it_manager">IT Manager</option>
+                          <option value="super_admin">Super Admin</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block mb-1">Status</label>
+                        <select value={editForm.is_active} onChange={e => setEditForm(f => ({ ...f, is_active: parseInt(e.target.value) }))}
+                          className="w-full bg-gray-50 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white outline-none focus:border-blue-500">
+                          <option value={1}>Active</option>
+                          <option value={0}>Inactive</option>
+                        </select>
+                      </div>
+                    </div>
+                    {/* Property assignments */}
+                    {properties.length > 0 && (
+                      <div>
+                        <label className="text-[10px] text-gray-500 block mb-1.5">Property Access</label>
+                        <div className="flex flex-wrap gap-2">
+                          {properties.map(p => {
+                            const assignment = editUser.properties?.find(up => up.id === p.id)
+                            return (
+                              <button type="button" key={p.id}
+                                onClick={async () => {
+                                  if (assignment) {
+                                    await api.delete(`/portal/users/${editUser.id}/revoke/${p.id}`)
+                                  } else {
+                                    await api.post(`/portal/users/${editUser.id}/grant`, { property_id: p.id, role: editForm.global_role || 'user' })
+                                  }
+                                  const uRes = await api.get('/portal/users')
+                                  setUsers(uRes.data.data || [])
+                                  const updated = (uRes.data.data || []).find(u => u.id === editUser.id)
+                                  if (updated) setEditUser(updated)
+                                }}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                                  assignment ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-300 dark:border-blue-600/50 text-blue-600 dark:text-blue-400' : 'bg-white dark:bg-[#0d0d0d] border-gray-200 dark:border-[#222] text-gray-500 hover:border-gray-300 dark:hover:border-[#333]'
+                                }`}
+                              >
+                                {assignment && <Check size={10} />}
+                                {p.name}
+                                {assignment && <span className="text-[9px] text-gray-400 ml-1">({assignment.role})</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {editError && <p className="text-xs text-red-500">{editError}</p>}
+                    <div className="flex gap-2 pt-2">
+                      <button type="submit" disabled={editLoading}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium disabled:opacity-60">
+                        {editLoading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        Save Changes
+                      </button>
+                      <button type="button" onClick={() => setEditUser(null)}
+                        className="px-4 py-2 bg-gray-100 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] text-gray-600 dark:text-gray-400 rounded-lg text-xs hover:text-gray-900 dark:hover:text-white transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Delete / Deactivate Confirmation Modal */}
+            {deleteConfirm && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDeleteConfirm(null)}>
+                <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#2a2a2a] rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                      <AlertTriangle size={18} className="text-red-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">Remove User</h3>
+                      <p className="text-[11px] text-gray-500">{deleteConfirm.name} ({deleteConfirm.email})</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <button onClick={() => confirmDeactivate(deleteConfirm.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors text-left">
+                      <EyeOff size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Deactivate</p>
+                        <p className="text-[10px] text-amber-600/70 dark:text-amber-500/60">Prevent login but keep user record. Can be reactivated later.</p>
+                      </div>
+                    </button>
+                    <button onClick={() => confirmDeletePermanent(deleteConfirm.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors text-left">
+                      <Trash2 size={14} className="text-red-600 dark:text-red-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-red-700 dark:text-red-400">Delete Permanently</p>
+                        <p className="text-[10px] text-red-600/70 dark:text-red-500/60">Remove user and all property assignments. This cannot be undone.</p>
+                      </div>
+                    </button>
+                  </div>
+                  <button onClick={() => setDeleteConfirm(null)}
+                    className="w-full px-4 py-2 bg-gray-100 dark:bg-[#0d0d0d] border border-gray-200 dark:border-[#222] text-gray-600 dark:text-gray-400 rounded-lg text-xs hover:text-gray-900 dark:hover:text-white transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           /* ── User Authorization ── */

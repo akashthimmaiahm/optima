@@ -116,7 +116,7 @@ router.delete('/registry/:id', authenticate, superAdminOnly, (req, res) => {
 function getCallerProperties(req) {
   const db = getDb();
   if (req.user.global_role === 'super_admin') return null; // null = all properties
-  return db.prepare(`SELECT property_id FROM user_properties WHERE user_id=? AND role IN ('super_admin','it_admin')`).all(req.user.id).map(r => r.property_id);
+  return db.prepare(`SELECT property_id FROM user_properties WHERE user_id=? AND role IN ('super_admin','admin','it_admin')`).all(req.user.id).map(r => r.property_id);
 }
 
 function canManageProperty(req, propertyId) {
@@ -128,10 +128,10 @@ function canManageProperty(req, propertyId) {
 // GET /api/portal/users — list users (super_admin sees all, property admins see their property users)
 router.get('/users', authenticate, (req, res) => {
   const db = getDb();
-  if (!['super_admin', 'it_admin', 'it_manager'].includes(req.user.global_role)) {
+  if (!['super_admin', 'admin', 'it_admin', 'it_manager'].includes(req.user.global_role)) {
     // Check if user is a property-level admin
     const propRoles = db.prepare(`SELECT role FROM user_properties WHERE user_id=?`).all(req.user.id);
-    const isPropertyAdmin = propRoles.some(r => ['super_admin', 'it_admin'].includes(r.role));
+    const isPropertyAdmin = propRoles.some(r => ['super_admin', 'admin', 'it_admin'].includes(r.role));
     if (!isPropertyAdmin) return res.status(403).json({ error: 'Insufficient permissions' });
   }
 
@@ -167,7 +167,13 @@ router.post('/users', authenticate, (req, res) => {
   const db = getDb();
   const bcrypt = require('bcryptjs');
   const { name, email, password, global_role = 'user', property_ids = [], property_roles = {} } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'name, email, password required' });
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  // Check caller has admin permissions (global or property-level)
+  const callerProps = getCallerProperties(req);
+  if (callerProps !== null && callerProps.length === 0) {
+    return res.status(403).json({ error: 'You do not have admin permissions to create users' });
+  }
 
   // Hierarchy: only master admin can create super_admin users
   if (global_role === 'super_admin' && req.user.global_role !== 'super_admin') {
@@ -175,7 +181,6 @@ router.post('/users', authenticate, (req, res) => {
   }
 
   // Property admins can only assign to properties they manage
-  const callerProps = getCallerProperties(req);
   if (callerProps !== null) {
     for (const pid of property_ids) {
       if (!callerProps.includes(Number(pid))) {
@@ -185,10 +190,11 @@ router.post('/users', authenticate, (req, res) => {
   }
 
   try {
-    const hash = bcrypt.hashSync(password, 10);
+    const userName = name || email.split('@')[0];
+    const hash = bcrypt.hashSync(password || require('crypto').randomUUID(), 10);
     const userId = db.prepare(
       `INSERT INTO users (name, email, password, global_role) VALUES (?,?,?,?)`
-    ).run(name, email, hash, global_role).lastInsertRowid;
+    ).run(userName, email, hash, global_role).lastInsertRowid;
 
     const assign = db.prepare(`INSERT OR IGNORE INTO user_properties (user_id, property_id, role) VALUES (?,?,?)`);
     property_ids.forEach(pid => {
@@ -222,13 +228,30 @@ router.put('/users/:id', authenticate, (req, res) => {
 router.delete('/users/:id', authenticate, (req, res) => {
   const db = getDb();
   if (req.user.id == req.params.id) return res.status(400).json({ error: 'Cannot deactivate yourself' });
-  // Only master admin can deactivate super_admins
   const target = db.prepare('SELECT global_role FROM users WHERE id=?').get(req.params.id);
   if (target?.global_role === 'super_admin' && req.user.global_role !== 'super_admin') {
     return res.status(403).json({ error: 'Only master admin can deactivate super_admins' });
   }
   db.prepare('UPDATE users SET is_active=0 WHERE id=?').run(req.params.id);
   res.json({ message: 'User deactivated' });
+});
+
+// DELETE /api/portal/users/:id/permanent — permanently delete user and all property assignments
+router.delete('/users/:id/permanent', authenticate, (req, res) => {
+  const db = getDb();
+  if (req.user.id == req.params.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+  const callerProps = getCallerProperties(req);
+  if (callerProps !== null && callerProps.length === 0) {
+    return res.status(403).json({ error: 'You do not have admin permissions to delete users' });
+  }
+  const target = db.prepare('SELECT global_role FROM users WHERE id=?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.global_role === 'super_admin' && req.user.global_role !== 'super_admin') {
+    return res.status(403).json({ error: 'Only master admin can delete super_admins' });
+  }
+  db.prepare('DELETE FROM user_properties WHERE user_id=?').run(req.params.id);
+  db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
+  res.json({ message: 'User permanently deleted' });
 });
 
 // POST /api/portal/users/:id/grant — grant property access (hierarchical)
