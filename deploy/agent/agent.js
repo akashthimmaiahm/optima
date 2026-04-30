@@ -286,7 +286,7 @@ async function collectAndReport(config) {
 // --- Heartbeat ---
 function startHeartbeat(config) {
   const beat = () =>
-    apiRequest(config.server_url, 'POST', '/api/agent/heartbeat', { agent_id: config.agent_id })
+    apiRequest(config.server_url, 'POST', '/api/agent/heartbeat', { agent_id: config.agent_id, property_key: config.property_key })
       .catch(() => {});
   beat();
   setInterval(beat, 5 * 60 * 1000);

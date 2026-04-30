@@ -30,10 +30,13 @@ api.interceptors.request.use((config) => {
   if (prop?.id) {
     config._propertyId = prop.id
 
-    // If this property is known to need direct connection, rewrite baseURL immediately
-    if (directUrlCache[prop.id]) {
+    // Auth and portal routes must always go to the central server
+    const url = config.url || ''
+    const isCentralRoute = url.startsWith('/auth') || url.startsWith('/portal') || url.startsWith('/agents')
+
+    if (!isCentralRoute && directUrlCache[prop.id]) {
+      // Direct connection for property-specific routes
       config.baseURL = directUrlCache[prop.id] + '/api'
-      // Don't send X-Property-Id to the property server (it doesn't need it)
     } else {
       config.headers['X-Property-Id'] = String(prop.id)
     }

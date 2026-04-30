@@ -23,7 +23,7 @@ function httpRequest(url, options = {}, postData) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const mod = u.protocol === 'https:' ? https : http;
-    const req = mod.request(u, options, res => {
+    const req = mod.request(u, { ...options, insecureHTTPParser: true }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
